@@ -1,34 +1,47 @@
-# Development Log
+# FelineGuard Development Log
 
-## 2026-01-09: Mechanical Prototype Selection & Hardware Procurement
+This log documents my engineering decisions, technical hurdles, and progress as I build a dual-core automated pet feeder.
 
-### 📝 Decision Making: Choosing the Mechanical Structure
-As an ECE student specializing in embedded firmware, my primary focus for this project is the dual-core control system (STM32 + ESP32). I have limited experience with mechanical engineering and 3D modeling from scratch.
+---
 
-To ensure the project moves forward efficiently without getting stuck on mechanical fabrication, I decided to adapt an existing open-source design for the physical feeder mechanism.
+## 2026-01-09: Architecture, Mechanical Selection & "Makerspace Readiness"
 
-**Criteria for Selection:**
-1.  **Simplicity:** Must be printable with standard FDM printers without complex support structures.
-2.  **Compatibility:** Must natively support the **Nema 17** stepper motor (a standard in robotics).
-3.  **Reliability:** Needs a proven auger (screw) mechanism to prevent kibble jamming.
-4.  **Aesthetics:** I wanted a design that looks clean and "elegant," rather than a makeshift assembly of PVC pipes.
+### 💡 Project Philosophy: Why I'm not "Reinventing the Wheel"
+As an ECE student, my core objective is the embedded firmware for the STM32 and ESP32. Early on, I realized that getting bogged down in complex mechanical CAD modeling would stall the project's momentum. 
 
-**The Selection Process:**
-I evaluated several popular designs on Thingiverse, including models by *NorthernLayers* and *gavinkennedy*. However, many were either designed for different purposes (bird feeders with small seeds), required complex heat-set inserts (which I wanted to avoid), or relied on expensive non-printed parts.
+**Decision:** I have opted for a "Verified Prototyping" approach—using open-source mechanical designs to allow me to focus 100% on the control logic and sensor fusion.
 
-**Final Decision:**
-I selected **[Pet feeder by szuchid](https://www.thingiverse.com/thing:3424616)**.
-* **Pros:** It features a vertical gravity-assisted flow, a simple 3-part print (base, auger, T-connector), and uses a recycled soda bottle as the hopper, which is an elegant solution to reduce print time and material usage.
-* **Action Plan:** I have downloaded the STL files (`base.stl`, `screw.stl`, `T-connector.stl`) and plan to print them at the UCSD ECE Makerspace next week using the Nema 17 motor I ordered today.
+### ⚙️ Mechanical Selection: The "szuchid" Design
+After evaluating multiple models on Thingiverse (e.g., NorthernLayers, gavinkennedy), I encountered several "deal-breakers": complex heat-set inserts, reliance on PVC pipes, or designs suited only for small bird seeds.
 
-### 🛒 Hardware BOM (Bill of Materials) Status
-Ordered the following core components from Amazon today:
-* **Actuator:** Nema 17 Stepper Motor (59Ncm High Torque) + A4988 Driver
-* **Mechanical:** 5mm to 8mm Flexible Coupler (as a fail-safe for the printed auger shaft)
-* **Sensors:** 5kg Load Cell (w/ HX711) for weight monitoring; IR Break Beam Sensor for dispense verification.
-* **Power:** 12V 2A DC Power Supply (with terminal adapter for breadboard compatibility).
+**Final Choice:** [Pet feeder by szuchid](https://www.thingiverse.com/thing:3424616)
+- **Why?** It's elegant in its simplicity. It uses a vertical gravity-assisted flow and a clever soda-bottle thread for the hopper.
+- **Components to print:** `bottom.stl` (Motor base), `screw.stl` (The auger), and `top.stl` (Hopper connector).
+- **Prototyping Note:** I will use the **5mm to 8mm Flexible Coupler** I ordered as a mechanical bridge between the motor shaft and the printed auger. This provides a "safety margin" for any minor 3D printing alignment issues.
 
-**Next Steps:**
-* Wait for hardware delivery.
-* 3D print the mechanical parts.
-* Begin Phase 1: Basic motor control testing with STM32.
+### 🛒 Hardware Procurement (BOM Status)
+The following "Phase 1" components are currently in transit:
+- **Actuator:** NEMA 17 Stepper Motor (59Ncm High Torque) + A4988 Driver.
+- **Sensors:** 5kg Load Cell (HX711) for weight tracking; IR Break Beam Sensor for meal verification.
+- **Power:** 12V 2A DC Adapter (Essential: includes a screw terminal adapter to avoid cutting cables).
+
+### 🖨️ 3D Printing Strategy (Bambu Studio / Makerspace)
+Through the UCSD ECE Makerspace tutorials, I've clarified the workflow from `.stl` to `.gcode`. 
+
+
+
+**Key Technical Adjustments for the Auger (`screw.stl`):**
+Standard print settings (15% infill) are too brittle for mechanical torque. To ensure the feeder can handle the resistance of dry kibble without snapping, I will manually override the slice parameters:
+- **Infill Density:** 40% (Gyroid pattern for multi-directional strength).
+- **Wall Loops:** Increased to 3-4 layers.
+- **Supports:** Enabled "Tree (Auto)" to handle the overhangs on the T-connector.
+
+### 🛠️ Makerspace Onboarding & Safety
+I have successfully signed the DocuSign waiver and passed the **General Lab Access Quiz** with 100% accuracy. 
+
+**Next Week's Mission:**
+1. **Physical Sign-off:** Demonstrate 3D printer and soldering safety to a Tutor at Jacobs Hall B538.
+2. **Fabrication:** Initiate the 4-6 hour print job for the mechanical chassis.
+3. **Soldering:** Tackle the first hardware hurdle—soldering headers onto the HX711 amplifier. (The plan is to use the 3D printing "wait time" to gain hands-on soldering experience).
+
+---
