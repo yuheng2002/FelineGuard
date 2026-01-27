@@ -29,7 +29,7 @@ I am manually configuring the microcontroller registers to understand how the ha
 * **Timer (TIM2):**
     * Configuring `PSC` (Prescaler) and `ARR` (Auto-Reload) to generate precise 1kHz PWM signals for the stepper motor.
 * **Safety & Debugging (In Progress):**
-    * **UART:** Writing a simple command parser to control the motor from my laptop.
+    * **UART:** Writing a simple command parser to control the motor from my computer.
     * **Watchdog (IWDG):** Setting up the hardware watchdog to auto-reset the system if the firmware freezes.
 
 ---
