@@ -42,7 +42,9 @@ I must credit Gemini for helping me ramp up on STM32 fundamentals. However, when
 AI is a powerful efficiency tool, but it often lacks context or prioritizes complexity over simplicity. As a Computer Engineering student aiming for a firmware career, system verification is my responsibility. I learned that verifying datasheet information is just as critical as verifying physical wiring.
 
 <img width="1133" height="800" alt="9a54fb2dc44838447d41101ac381234b" src="https://github.com/user-attachments/assets/c540057b-c729-4c7f-af9d-a29cc8de63f1" />
-![d7fe7c42ea51bd47800df425858acab9](https://github.com/user-attachments/assets/4b38072f-8a33-41b1-b3bf-c4b9b9a509ba)
+
+<img width="822" height="618" alt="image" src="https://github.com/user-attachments/assets/cb0b26e9-6c26-4662-bee9-dcb3101a7f9c" />
+
 
 
 ## 2026-01-26: The "Pivot" to Bare-Metal Drivers
