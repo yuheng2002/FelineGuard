@@ -1,86 +1,67 @@
-# FelineGuard: AI-Driven Dietary & Health Station 🐱
+# FelineGuard (STM32 Bare-Metal Project)
 
-**FelineGuard** is a modular, dual-core embedded system designed to solve multi-cat dietary management and health monitoring challenges.
+**FelineGuard** is a pet feeder project I am building from scratch to learn embedded firmware development.
 
-Unlike traditional time-based feeders, FelineGuard employs a **split-architecture** design: using an **STM32** for robust real-time actuation and an **ESP32** for high-level sensing and logic. This ensures that critical motor functions are decoupled from sensor processing, maximizing system reliability.
+While many smart feeders focus on App features, my goal here is to master the low-level control. I am writing my own drivers in **C (Bare-Metal)** for the STM32F446RE without using the HAL library. The idea is to make sure the motor control is reliable and deterministic—so the cat gets fed even if the Wi-Fi breaks.
 
----
-
-## 🏗 System Architecture
-
-The system is divided into two independent subsystems communicating via **UART**:
-
-### 1. The Body (Real-Time Actuation)
-* **MCU**: STM32 Nucleo (Cortex-M4)
-* **Role**: Handles precise motor stepping, safety interrupts, and watchdog monitoring.
-* **Tech**: Bare-metal C drivers encapsulated in C++ classes.
-
-### 2. The Brain (Sensing & Logic)
-* **MCU**: ESP32-S3
-* **Role**: Manages Thermal Sensing (Health), Identity Logic, and WiFi connectivity.
-* **Tech**: C++, I2C Protocols, Sensor Fusion.
+> **Current Status:** Working on Phase 1 (Motor Drivers & Basic Logic).
 
 ---
 
-## 🗺️ Development Roadmap
+## 🛠 Hardware Setup
 
-This project is executed in four distinct phases to ensure a modular and testable development process.
+I am keeping the hardware simple to focus on the code logic.
 
-### 🟢 Phase 1: The Mechanical Body (STM32 Foundation)
-*Focus: Bare-metal Drivers, GPIO, Interrupts, and C++ RAII.*
-
-- [ ] **Hardware Setup**: Connect ULN2003 Driver & Stepper Motor to STM32.
-- [ ] **GPIO Driver**: Implement low-level register configuration (Input/Output) without HAL.
-- [ ] **Motor Abstraction**: Create a C++ `class Motor` to encapsulate stepping logic.
-- [ ] **UART Receiver**: Implement Ring Buffer & Interrupt-based UART to receive commands (e.g., `'F'` to feed).
-- [ ] **Safety**: Basic boundary checks to prevent motor overrun.
-
-### 🟡 Phase 2: Thermal Perception (ESP32 Sensing)
-*Focus: I2C Protocol, Data Processing, Sensor Integration.*
-
-- [ ] **Hardware Setup**: Interface MLX90640 Thermal Camera with ESP32.
-- [ ] **I2C Driver**: Implement I2C communication to read sensor registers.
-- [ ] **Data Processing**: Parse the $32 \times 24$ temperature array to find `Max_Temp`.
-- [ ] **Health Logic**: Trigger an alert signal if detected temperature > 39.5°C.
-- [ ] **Unit Testing**: Verify temperature readings against known sources.
-
-### 🔴 Phase 3: Neural Integration (System Fusion)
-*Focus: Inter-Processor Communication (IPC), State Machines.*
-
-- [ ] **Physical Link**: Connect STM32 (UART TX/RX) and ESP32 (UART RX/TX) with common ground.
-- [ ] **Protocol Design**: Define hex command structure (e.g., `0x01`=FEED, `0xFF`=EMERGENCY_STOP).
-- [ ] **State Machine (STM32)**: Handle `IDLE`, `FEEDING`, and `LOCKED` states based on UART signals.
-- [ ] **Integration Test**: Thermal Sensor (ESP32) detects heat -> Sends Stop Command -> Motor (STM32) halts immediately.
-
-### 🔵 Phase 4: User Interaction & Optimization (Advanced)
-*Focus: SPI Protocol, DMA, and UI.*
-
-- [ ] **SPI Display**: Interface an OLED/TFT screen via **SPI** to STM32.
-- [ ] **Status Dashboard**: Display real-time system status ("Ready", "Feeding", "Temp: Normal").
-- [ ] **DMA Upgrade**: Refactor UART reception to use **Direct Memory Access (DMA)** to offload CPU.
-- [ ] **Watchdog**: Enable Independent Watchdog (IWDG) to auto-reset system on hard faults.
+* **MCU:** STM32 Nucleo-F446RE (ARM Cortex-M4)
+* **Motor:** Nema 17 Stepper Motor (controlled via **A4988 Driver**)
+* **Power:** 12V 2A DC Adapter (for the motor) + 3.3V Logic
+* **Tools:** Logic Analyzer (for verifying PWM waveforms) & Multimeter
 
 ---
 
-## 🛠 Tech Stack & Skills
+## 💻 Tech & Registers (What I'm Learning)
 
-* **Hardware**: STM32F4, ESP32-S3, Stepper Motors (28BYJ-48), Thermal Camera (MLX90640), OLED (SPI).
-* **Languages**: C (Drivers), C++17 (Application Logic), Python (Data Analysis/Testing).
-* **Protocols**:
-    * **UART**: Board-to-board communication.
-    * **I2C**: Sensor data acquisition.
-    * **SPI**: Display interface.
-* **Concepts**: Bare-metal programming, RAII (Resource Acquisition Is Initialization), Interrupt Service Routines (ISR), DMA, Watchdog Timer.
+I am manually configuring the microcontroller registers to understand how the hardware works under the hood.
 
----
-
-## 🚀 Getting Started
-
-*(Instructions on how to build and flash the firmware will be added here)*
-
-1.  **STM32 Firmware**: Located in `/firmware-stm32`. Build using CMake/Make.
-2.  **ESP32 Firmware**: Located in `/firmware-esp32`. Build using PlatformIO.
+* **GPIO Driver:**
+    * Using `MODER` and `AFR` to set pin modes.
+    * Using `BSRR` (Bit Set/Reset Register) for atomic pin control (Step/Dir signals), avoiding read-modify-write issues.
+* **Timer (TIM2):**
+    * Configuring `PSC` (Prescaler) and `ARR` (Auto-Reload) to generate precise 1kHz PWM signals for the stepper motor.
+* **Safety & Debugging (In Progress):**
+    * **UART:** Writing a simple command parser to control the motor from my laptop.
+    * **Watchdog (IWDG):** Setting up the hardware watchdog to auto-reset the system if the firmware freezes.
 
 ---
 
-*Project created by Yuheng for UCSD ECE 145 Portfolio & 2026 Internship Preparation.*
+## 📝 Development Plan
+
+### Phase 1: The Basics (Current Focus)
+*Goal: Make the motor spin precisely without HAL.*
+- [x] Hardware wiring (STM32 -> A4988 -> Motor).
+- [ ] Write GPIO driver to control the A4988 Direction pin.
+- [ ] Configure TIM2 to generate PWM pulses for the Step pin.
+- [ ] Verification: Check the PWM frequency with a Logic Analyzer.
+
+### Phase 2: Control & Safety (This Week)
+*Goal: Add interaction and reliability.*
+- [ ] Implement UART to send "Feed" commands via laptop.
+- [ ] Add a User Button interrupt (PC13) as a manual trigger.
+- [ ] Enable the Watchdog Timer (IWDG) to prevent crashes.
+
+### Phase 3: Future Improvements
+- [ ] Move the logic to a Finite State Machine (FSM).
+- [ ] Potentially connect to an ESP32 for Wi-Fi features.
+
+---
+
+## 📂 Project Structure
+
+```text
+FelineGuard/
+├── Drivers/
+│   ├── Inc/               # My header files (stm32f446xx.h, etc.)
+│   └── Src/               # My driver implementation (.c files)
+├── Src/
+│   └── main.c             # Main application logic
+└── devlog.md              # My daily notes and debugging steps
