@@ -37,5 +37,14 @@
 *.out
 *.app
 
+# --- STM32CubeIDE Specific ---
+Debug/
+Release/
+*.elf
+*.map
+*.list
+*.su
+.pdm
+
 # debug information files
 *.dwo
