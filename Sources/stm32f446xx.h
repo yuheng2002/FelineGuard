@@ -80,6 +80,7 @@
 #define TIM2_BASEADDR       (APB1_BASEADDR) // 0x40000000
 // #define TIM3_BASEADDR    (APB1_BASEADDR + 0x0400U) // For future use
 // #define I2C1_BASEADDR    (APB1_BASEADDR + 0x5400U) // For future use
+#define USART2_BASEADDR     (APB1_BASEADDR + 0x4400U) // USART2: 0x40004400
 
 /*
  * APB2 Peripherals
@@ -87,6 +88,7 @@
 #define SYSCFG_BASEADDR     (APB2_BASEADDR + 0x3800U) // 0x40013800
 #define EXTI_BASEADDR       (APB2_BASEADDR + 0x3C00U) // 0x40013C00
 #define TIM1_BASEADDR       (APB2_BASEADDR + 0x0000U) // Advanced Timer
+
 
 /*
  * ==========================================
@@ -223,6 +225,23 @@ typedef struct{
 
 /*
  * ==========================================
+ * 			USART Register Map
+ * ==========================================
+ * using USART2 for testing purposes through serial print
+ * following um1724 manual's recommendation (page 26)
+ */
+typedef struct{
+	uint32_t SR;   // Status register, 					  Offset: 0x00
+	uint32_t DR;   // Data register,   					  Offset: 0x04
+	uint32_t BRR;  // Baud rate register,   			  Offset: 0x08
+	uint32_t CR1;  // Control register 1,   			  Offset: 0x0C
+	uint32_t CR2;  // Control register 2,   			  Offset: 0x10
+	uint32_t CR3;  // Control register 3,   			  Offset: 0x14
+	uint32_t GTPR; // Guard time and pre-scalar register, Offset: 0x18
+} USART_RegDef_t;
+
+/*
+ * ==========================================
  * 4. Peripheral Definitions (Typecasting)
  * ==========================================
  * Creating "Objects" for our peripherals.
@@ -257,6 +276,14 @@ typedef struct{
 // Project 2: Timer definition
 #define TIM2    ((TIM_RegDef_t*)TIM2_BASEADDR)
 // We will define TIM_RegDef_t in Timer driver or here later
+
+/*
+ * ==========================================
+ *   USART2 (added for testing purposes)
+ * ==========================================
+ * Reference: RM0390 Reference Manual - USART Register map
+ */
+#define USART2  ((USART2_RegDef_t*)USART2_BASEADDR)
 
 /*
  * ==========================================
