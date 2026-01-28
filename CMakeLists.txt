@@ -52,7 +52,8 @@ set (PROJECT_SOURCES
 	Sources/main.c
 	Sources/syscalls.c
 	Sources/sysmem.c
-
+	Sources/stm32f446xx_gpio_driver.c # linking gpio_driver
+	Sources/stm32f446xx_timer_driver.c # linking timer_driver
 
 	)
 

@@ -17,13 +17,79 @@
  */
 
 #include <stdint.h>
+#include "stm32f446xx.h"
+#include "stm32f446xx_gpio_driver.h"
+#include "stm32f446xx_timer_driver.h"
 
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
 
+void Setup_Peripherals(void){ // void as parameter emphasizes that this function will not take in anything
+	/*
+	 * ========================================
+	 * 			RCC Configuration
+	 * ========================================
+	 */
+	GPIOA_PCLK_EN(); // nothing works unless Port A is first Enabled
+	TIM2_PCLK_EN(); // similarly, TIM2 will not work unless it is enabled
+
+	/*
+	 * ========================================
+	 * 		PA0 (STEP) Configuration
+	 * ========================================
+	 */
+	GPIO_Handle_t GPIO_STEP; // PA0
+
+	GPIO_STEP.pGPIOx = GPIOA; // set the correct Port Group
+
+	GPIO_STEP.GPIO_PinConfig.GPIO_PinNumber = 0; // Pin 0
+	GPIO_STEP.GPIO_PinConfig.GPIO_PinMode = GPIO_MODE_ALTN; // set to Alternate Function mode
+	GPIO_STEP.GPIO_PinConfig.GPIO_PinSpeed = GPIO_SPEED_VERY_HIGH; // high speed since we are generating PWM wave
+	GPIO_STEP.GPIO_PinConfig.GPIO_PinPuPdControl = GPIO_NO_PUPD; // no need for pull-up resistor to be enabled, this is controlled by software, not hardware button
+	// no need to set output type because the MODER is not set to Output mode
+	GPIO_STEP.GPIO_PinConfig.GPIO_PinAltFunMode = GPIO_AF_1; // TIM2_CHI/TIM2_ETR enabled at AF1 for PA0
+
+	GPIO_Init(&GPIO_STEP); // use GPIO_Init implemented in gpio_driver.c to Configure PA0 registers
+
+	/*
+	 * ========================================
+	 * 		PA1 (DIR) Configuration
+	 * ========================================
+	 */
+	GPIO_Handle_t GPIO_DIR; // PA1
+
+	GPIO_DIR.pGPIOx = GPIOA;
+
+	GPIO_DIR.GPIO_PinConfig.GPIO_PinNumber = 1;
+	GPIO_DIR.GPIO_PinConfig.GPIO_PinMode = GPIO_MODE_OUT; // output mode to send signal
+	GPIO_DIR.GPIO_PinConfig.GPIO_PinSpeed = GPIO_SPEED_MEDIUM; // no need to use high speed, this will save some power
+	GPIO_DIR.GPIO_PinConfig.GPIO_PinOPType = GPIO_OP_TYPE_PP; // default mode (Open Drain will be used for I2C)
+	GPIO_DIR.GPIO_PinConfig.GPIO_PinPuPdControl = GPIO_NO_PUPD; // again, this will be set by purely software, there is no external hardware button, so need for pull-up/down resistors to be enabled
+
+	GPIO_Init(&GPIO_DIR); // forgot to initialize, causing compilation error
+	/*
+	 * ========================================
+	 * 		TIM2 (PWM) Configuration
+	 * ========================================
+	 */
+	TIM_Handle_t TIMER2;
+	TIMER2.pTIMx = TIM2;
+	TIMER2.TIM_Config.Prescaler = 15; // PSC
+	TIMER2.TIM_Config.Period = 3000; // ARR
+
+	TIM_PWM_Init(&TIMER2); // Configure TIM2
+}
+
 int main(void)
 {
-    /* Loop forever */
-	for(;;);
+	Setup_Peripherals(); // set up hardware
+
+	TIM_SetCompare1(TIM2, 500); // keep it spinning for testing purposes
+
+	GPIO_WriteToOutputPin(GPIOA, 1, DISABLE); // not sure which direction this is, but leave it here for testing purpose
+
+	while (1){
+
+	}
 }
