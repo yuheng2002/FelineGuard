@@ -29,7 +29,7 @@ Even though both the Breathing LED and the Stepper Motor use the same TIM2 perip
 * **For the Motor (Speed Control):**
     * The focus is on **Frequency (ARR)**.
     * **Duty Cycle is Irrelevant:** The motor driver only cares about the **"Rising Edge"** (the instant voltage jumps from 0 to 1). It steps once per edge. It doesn't matter if the signal stays HIGH for 1% or 99% of the cycle, as long as the edge is detected.
-    * **The Role of ARR:** Here, ARR regulates the *time interval* between these rising edges. A larger ARR means a longer wait between steps, resulting in a slower speed.
+    * **The Role of ARR:** Here, ARR regulates the *time interval* between these rising edges. Keeping PSC value as an invariant, a larger ARR means a longer wait between steps, resulting in a slower speed.
     * **Control Precision:** Just like with the LED, a higher ARR (combined with a lower PSC) gives us higher **Control Resolution**. We can achieve the same frequency with (PSC=3, ARR=5000) as (PSC=15, ARR=999), but the former allows us to fine-tune the speed more precisely, which is critical for smooth acceleration later.
 
 ### 4. The "Physics" Limit
