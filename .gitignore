@@ -44,6 +44,12 @@ Release/
 *.map
 *.list
 *.su
+
+# IDE specific
+.settings/
+*.launch
+.project
+.cproject
 .pdm
 
 # debug information files
