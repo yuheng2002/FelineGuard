@@ -1,5 +1,41 @@
 # FelineGuard Engineering Log
 
+# 2026-01-29: USART2 Interrupt Enabled & Python Script Optimization
+
+Following the successful setup of USART2 as both transmitter and receiver for testing (I plan to connect this STM32 board to my ESP32 later for IoT features), I have now enabled the interrupt for USART2 by setting the corresponding bit in the NVIC -> ISER (Interrupt Set-Enable Register).
+
+Although the program behaves the same externally, this is a major optimization. My previous approach was "blocking" (polling), meaning the CPU had to ask "is there new data?" millions of times per second. This wasted CPU resources. Since microcontroller CPUs are single-core and limited in processing power, they shouldn't be tied up checking for flags. By enabling NVIC, the CPU now only collects data when the hardware triggers an interrupt, leaving it free to do other tasks in the meantime.
+
+Here are the key things I learned along the way:
+
+**1. Hardware Architecture: GPIO vs. Internal Peripherals**
+When I set up the PC13 User Button interrupt previously, I had to configure three different peripherals: SYSCFG, EXTI, and NVIC. However, for USART2, I only needed to configure the NVIC.
+
+* **Why the difference?** GPIOs are "external" pins provided by the ST Nucleo architecture. The signal comes from outside the chip logic. That’s why they need **SYSCFG** (to route specific pins like PC13 to the correct EXTI line) and **EXTI** (the "External" Interrupt Controller) to act as the outer guard.
+* **The Logic:** SYSCFG routes pins based on their number. For example, PC13 uses `SYSCFG->EXTI[4]` because 13 / 4 = index 3 (EXTI[] counts starting from 1, and even though the result is 3, there is a remainder, so it does not fit in the first 3 blocks), and the specific bits are determined by 13 % 4.
+* **Internal Guards:** USART2 is an internal peripheral. It doesn't need the external EXTI guard; it has a direct line to the **NVIC** (Nested Vectored Interrupt Controller). The NVIC is part of the ARM Cortex-M4 core itself (documented in the PM0214 manual), which is why it handles the final "gatekeeping" for the CPU.
+* **IRQ Numbers:** I found the IRQ numbers in the RM0390 Vector Table (EXTI15_10 is Position 40, USART2 is Position 38). It's important to remember: **Priority** is the logical "who goes first" sequence, while **Position** maps to the specific physical bit in the NVIC->ISER register that enables the interrupt.
+
+**2. ISR Best Practices: Keep it Short**
+The difference between polling and interrupts is just *when* the CPU notices the task. However, once inside the `USART2_IRQHandler`, the CPU is busy.
+
+* **The Risk:** If I put too much code inside the Interrupt Service Routine (ISR)—processing that takes 1-3 seconds—the CPU cannot handle other interrupts during that time.
+* **The Solution:** The ISR should only do the bare minimum (like reading the data to a variable and setting a flag). The heavy processing logic should happen in the `main` loop.
+* **Real-world context:** Not all tasks have equal weight. In my Cat Feeder, "feeding" is the critical mission. I don't want a low-priority message receiver to block the high-priority feeding mechanism. In safety-critical systems (like cars), this latency could be the difference between a system reacting in time or failing.
+
+**3. Event-Driven Programming**
+I need to remember that Interrupt functions (ISRs) should never be called manually in the `main` loop. That defeats the purpose of event-driven programming.
+
+* **Mechanism:** The ISR is defined in `main.c`, but it is triggered automatically by hardware hardware events.
+* **Callback connection:** This reminds me of callback functions I learned in my ECE140A IoT class. While not exactly the same, the philosophy is identical: tell the CPU *what* to do when a specific trigger happens, without forcing the CPU to constantly check for that trigger.
+
+**4. Debugging & Python Logic**
+My debugging process taught me the most today.
+
+* **The Infinite Loop Bug:** Initially, I forgot to reset `message = 0` after processing 'F'. This caused the motor to spin endlessly because the `while(1)` loop kept seeing 'F'.
+* **The "Buffer" Realization:** I noticed that typing 'H' (Ping) didn't show the endless spam of "Feed Complete" messages that were actually happening in the background. My Python script was only reading one line at a time. This made me realize the importance of `ser.reset_input_buffer()`. Before sending a new command from Python, I now clear the buffer to ensure I'm not reading old "garbage" data or historical responses. This is the trade-off of writing my own Python script versus using a standard Serial Monitor: I have more control, but I have to manage the data flow myself.
+* **Handling Disconnects:** I found that unplugging the STM32 didn't trigger my original "Timeout" warning. Instead, it crashed the script with a `PermissionError` (WriteFile failed). This is because the OS handle to the USB port was lost. I added a specific `try/except` block for `serial.SerialException` to catch this scenario, allowing the program to exit gracefully and close resources (`ser.close()`) in the `finally` block.
+
 # 2026-01-28: USART2 Serial Debugging + Python Testing
 
 Following the implementation of my USART2 drivers, I successfully printed simple test messages using the VSCode Serial Monitor extension. I was also able to simulate the "cat feeding" process by sending the 'F' command to the STM32 to trigger the motor.
