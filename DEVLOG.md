@@ -1,12 +1,10 @@
 # FelineGuard Engineering Log
 
-Here is the refined version of your dev log. I have kept your personal tone, your logic regarding the CSE30 assembly concepts, and your "aha!" moments, but I smoothed out the grammar and clarified the technical explanations (especially the parts about optimization and hardware behavior).
-
-```markdown
-## 2026-01-28: USART2 Setup & Enhanced Understanding of Volatile
+# 2026-01-28: USART2 Setup & Enhanced Understanding of Volatile
 
 Today, I implemented basic USART drivers and successfully printed my first test message, "Motor System Initialized!", from my STM32 MCU to the VSCode Serial Monitor.
 
+## From Arduino to Bare-Metal
 This basic Serial Print might not look impressive on the surface. In my ECE140A IoT course, printing to the Serial Monitor with an ESP32 only takes three steps:
 1. Connect the ESP32 to the desktop via cable.
 2. Call `Serial.begin(115200);`.
@@ -14,8 +12,7 @@ This basic Serial Print might not look impressive on the surface. In my ECE140A 
 
 It seems simple, but that is only because someone else already wrote all the drivers in the background to handle the peripherals. By implementing the USART drivers on the STM32 myself, I have finally gained a full, register-level understanding of how the board actually interacts with my PC.
 
-### USART Configuration (The 8-N-1 Protocol)
-
+## USART Configuration (The 8-N-1 Protocol)
 Like other peripherals, USART has many registers. For my testing purposes, I defined a configuration struct with five key settings: **Mode**, **WordLength**, **Parity**, **StopBits**, and **BaudRate**.
 
 I used the standard **"8-N-1"** protocol:
@@ -27,62 +24,18 @@ For the **Mode**, I checked the datasheet and found that **PA2** supports USART2
 
 For **BaudRate**, instead of just calling the mysterious `Serial.begin(115200)` function in the Arduino library, I manually implemented a `USART_SetBaudRate` function. I set Oversampling to 16 (`OVER8=0`) and calculated the value using the standard equation, confirming via the datasheet that my CPU runs at 16MHz by default.
 
-### The "Volatile" Keyword & Assembly Optimization
-
+## The "Volatile" Keyword & Assembly Optimization
 A key takeaway from today is understanding the `volatile` keyword. When I started bare-metal development a month ago, I knew `volatile` was used to "stop the compiler from breaking things," but my understanding was vague. Recently, while learning about Assembly Language and ARM instructions in my **CSE30** course, I finally connected the dots.
 
-In CSE30, I learned that code efficiency comes down to the number of instructions the CPU executes. For example, a `do-while` loop can sometimes be more efficient than a `while` loop because of how branch instructions are handled. In limited-resource environments (like STM32 or 8-bit MCUs), every bit of optimization matters. Fewer instructions mean fewer clock cycles, which ultimately means the MCU draws less power and runs more efficiently.
+### Instruction Efficiency
+In CSE30, I learned that code efficiency comes down to the number of instructions the CPU executes. For example, a `do-while` loop can sometimes be more efficient than a `while` loop because of how branch instructions are handled (checking the condition once vs. twice). 
 
-However, we don't write everything in Assembly because it would make development painfully slow. We rely on the **Compiler Optimizer** to translate our "redundant C code" into efficient Assembly. But sometimes, the optimizer is *too* smart for its own good.
+In limited-resource environments (like STM32 or 8-bit MCUs), every bit of optimization matters. Fewer instructions mean fewer clock cycles, which ultimately means the MCU draws less power and runs more efficiently. However, we don't write everything in Assembly because it would make development painfully slow. We rely on the **Compiler Optimizer** to translate our C code into efficient Assembly. But sometimes, the optimizer is *too* smart for its own good.
 
-#### The Problem with Optimization in Hardware
+### The Problem with Optimization in Hardware
 Consider this polling loop:
 ```c
 while ( ! (USART2->SR & TXE) ); // Wait until Transmit Empty flag is set
-
-```
-
-If I compile this with `-O2` optimization *without* `volatile`, the CPU assumes `USART2->SR` is just a regular variable in memory. It thinks, "This value doesn't change inside the loop, so I'll just load it once to save time."
-
-In Assembly, it might look like this:
-
-```assembly
-LDR R0, [R1]     ; Load SR value into Register R0 (Only happens once!)
-Loop:
-    CMP R0, #0   ; Check if R0 is 0
-    BEQ Loop     ; If equal, branch back to Loop
-
-```
-
-**The result:** The CPU keeps checking the *cached* value in R0. Meanwhile, the actual hardware flag in the `SR` register might have flipped to 1 because the data transfer finished, but the CPU never looks at the physical address again. The program hangs in an infinite loop.
-
-#### The Volatile Solution
-
-By adding the `volatile` keyword to the `SR` member in my `USART_RegDef_t` struct, I force the compiler to be "less lazy." It tells the compiler: *"The value at this address can change at any time (by hardware), so do not cache it."*
-
-The resulting Assembly becomes:
-
-```assembly
-Loop:
-    LDR R0, [R1] ; ALWAYS re-load the value from the physical memory address
-    CMP R0, #0
-    BEQ Loop
-
-```
-
-This ensures the CPU always checks the real state of the hardware register.
-
-### Struct Alignment
-
-I also reinforced my understanding of struct memory mapping. Since `uint32_t` is exactly 4 bytes, and the STM32 registers are aligned by 4 bytes, defining a struct `USART_RegDef_t` with `uint32_t` members automatically aligns my code with the physical memory offsets.
-
-**Correction on yesterday's code:** I actually forgot to add `volatile` to my struct definition yesterday! It still worked, likely because I was compiling in **Debug Mode** (which usually defaults to `-O0` optimization). If I had switched to **Release Mode** (which enables `-O2`), my code likely would have broken.
-
-Today solidified the link between high-level C code, Assembly instructions, and the physical behavior of the processor.
-
-```
-
-```
 
 ## 2026-01-27: Motor Testing & PWM Logic Deep Dive
 
