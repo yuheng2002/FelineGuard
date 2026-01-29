@@ -45,7 +45,7 @@ I am manually configuring the microcontroller registers to understand how the ha
 
 ### Phase 2: Control & Safety (This Week)
 *Goal: Add interaction and reliability.*
-- [ ] Implement UART to send "Feed" commands via laptop.
+- [x] Implement UART to send "Feed" commands via laptop.
 - [ ] Add a User Button interrupt (PC13) as a manual trigger.
 - [ ] Enable the Watchdog Timer (IWDG) to prevent crashes.
 
