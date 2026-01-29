@@ -4,7 +4,7 @@
 
 While many smart feeders focus on App features, my goal here is to master the low-level control. I am writing my own drivers in **C (Bare-Metal)** for the STM32F446RE without using the HAL library. The idea is to make sure the motor control is reliable and deterministic—so the cat gets fed even if the Wi-Fi breaks.
 
-> **Current Status:** Working on Phase 1 (Motor Drivers & Basic Logic).
+> **Current Status:** Working on Phase 2 (Motor Drivers & Basic Logic).
 
 ---
 
