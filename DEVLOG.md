@@ -63,7 +63,7 @@ This ensures the CPU always checks the real state of the hardware register.
 ### Struct Alignment
 I also reinforced my understanding of struct memory mapping. Since `uint32_t` is exactly 4 bytes, and the STM32 registers are aligned by 4 bytes, defining a struct `USART_RegDef_t` with `uint32_t` members automatically aligns my code with the physical memory offsets.
 
-Correction on yesterday's code: I actually forgot to add `volatile` to my struct definition yesterday! It still worked, likely because I was compiling in Debug Mode (which usually defaults to `-O0` optimization). If I had switched to Release Mode (which enables `-O2`), my code likely would have broken.
+**Correction on yesterday's code**: I actually forgot to add `volatile` to my struct definition yesterday! It still worked, likely because I was compiling in **Debug Mode** (which usually defaults to `-O0` optimization). If I had switched to **Release Mode** (which enables `-O2`), my code likely would have broken.
 
 Today solidified the link between high-level C code, Assembly instructions, and the physical behavior of the processor.
 
