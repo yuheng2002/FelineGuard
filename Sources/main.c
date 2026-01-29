@@ -17,13 +17,22 @@
  */
 
 #include <stdint.h>
+#include <string.h> // for strlen()
 #include "stm32f446xx.h"
 #include "stm32f446xx_gpio_driver.h"
 #include "stm32f446xx_timer_driver.h"
+#include "stm32f446xx_uart_driver.h"
 
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
 #endif
+
+/* --- Global Variables --- */
+USART_Handle_t USART2_Handle; // declared here to reuse in USART_SendData in main() function
+
+void software_delay(uint32_t count){
+    for(uint32_t i = 0; i < count; i++);
+}
 
 void Setup_Peripherals(void){ // void as parameter emphasizes that this function will not take in anything
 	/*
@@ -33,6 +42,7 @@ void Setup_Peripherals(void){ // void as parameter emphasizes that this function
 	 */
 	GPIOA_PCLK_EN(); // nothing works unless Port A is first Enabled
 	TIM2_PCLK_EN(); // similarly, TIM2 will not work unless it is enabled
+	USART2_PCLK_EN();
 
 	/*
 	 * ========================================
@@ -79,17 +89,87 @@ void Setup_Peripherals(void){ // void as parameter emphasizes that this function
 	TIMER2.TIM_Config.Period = 3000; // ARR
 
 	TIM_PWM_Init(&TIMER2); // Configure TIM2
+
+	/* ---------- USART2 Configuration ----------*/
+
+	/*
+	 * ========================================
+	 * 		PA2 (TX) Configuration
+	 * ========================================
+	 * according to Table 11. Alternate function at page 57 in datasheet
+	 * when PA2 is set to AF7
+	 * it can use USART2_TX
+	 */
+	GPIO_Handle_t USART2_TX;
+
+	USART2_TX.pGPIOx = GPIOA;
+	USART2_TX.GPIO_PinConfig.GPIO_PinNumber = 2;
+	USART2_TX.GPIO_PinConfig.GPIO_PinMode = GPIO_MODE_ALTN;
+	USART2_TX.GPIO_PinConfig.GPIO_PinSpeed = GPIO_SPEED_VERY_HIGH;
+	USART2_TX.GPIO_PinConfig.GPIO_PinAltFunMode = GPIO_AF_7 ;
+	USART2_TX.GPIO_PinConfig.GPIO_PinPuPdControl = GPIO_PIN_PU; // pull-up
+	USART2_TX.GPIO_PinConfig.GPIO_PinOPType = GPIO_OP_TYPE_PP; // default
+
+	GPIO_Init(&USART2_TX);
+
+	/*
+	 * ========================================
+	 * 		PA3 (RX) Configuration
+	 * ========================================
+	 * when PA3 is set to AF7
+	 * it can use USART2_RX
+	 *
+	 * --------------- NOTE ---------------
+	 * Both TX/RX are configured with internal pull-ups to ensure the line remains
+	 * in a stable IDLE (High) state. This avoids floating-point noise that might
+	 * be misinterpreted as a START bit (Low), preventing the receiver from
+	 * sampling garbage data.
+	 */
+	GPIO_Handle_t USART2_RX;
+
+	USART2_RX.pGPIOx = GPIOA;
+	USART2_RX.GPIO_PinConfig.GPIO_PinNumber = 3;
+	USART2_RX.GPIO_PinConfig.GPIO_PinMode = GPIO_MODE_ALTN;
+	USART2_RX.GPIO_PinConfig.GPIO_PinSpeed = GPIO_SPEED_VERY_HIGH;
+	USART2_RX.GPIO_PinConfig.GPIO_PinAltFunMode = GPIO_AF_7 ;
+	USART2_RX.GPIO_PinConfig.GPIO_PinPuPdControl = GPIO_PIN_PU; // pull-up
+	USART2_RX.GPIO_PinConfig.GPIO_PinOPType = GPIO_OP_TYPE_PP; // default
+
+	GPIO_Init(&USART2_RX);
+
+	/*
+	 * ========================================
+	 * 		USART2 Configuration
+	 * ========================================
+	 * since I only use it for testing purposes (Serial Print)
+	 * and giving command to turn the motor from my end
+	 * I use the standard "8-N-1" setup
+	 * 1. 8 bits as word length (not 9 since I will not use parity)
+	 * 2. None parity (unless signal is not stable, it is not needed)
+	 * 3. Stop Bits -> 1 (not too fast, not too slow, right in the middle)
+	 */
+	USART2_Handle.pUSARTx = USART2;
+	USART2_Handle.USART_Config.USART_MODE = USART_MODE_TXRX;
+	USART2_Handle.USART_Config.USART_WordLength = USART_WordLength_8;
+	USART2_Handle.USART_Config.USART_ParityControl = USART_Parity_DISABLE;
+	USART2_Handle.USART_Config.USART_StopBits = USART_StopBits_1;
+	USART2_Handle.USART_Config.USART_Baud = USART_Baud_115200;
+
+	USART_Init(&USART2_Handle);
 }
 
 int main(void)
 {
 	Setup_Peripherals(); // set up hardware
 
-	TIM_SetCompare1(TIM2, 500); // keep it spinning for testing purposes
+	// TIM_SetCompare1(TIM2, 4999); // keep it spinning for testing purposes
 
-	GPIO_WriteToOutputPin(GPIOA, 1, DISABLE); // not sure which direction this is, but leave it here for testing purpose
+	// GPIO_WriteToOutputPin(GPIOA, 1, DISABLE); // not sure which direction this is, but leave it here for testing purpose
+
+	char my_msg[] = "Motor System Initialized!\r\n";
 
 	while (1){
-
+		USART_SendData(&USART2_Handle, (uint8_t*)my_msg, strlen(my_msg));
+		software_delay(5000000);
 	}
 }

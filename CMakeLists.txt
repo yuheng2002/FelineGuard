@@ -54,7 +54,7 @@ set (PROJECT_SOURCES
 	Sources/sysmem.c
 	Sources/stm32f446xx_gpio_driver.c # linking gpio_driver
 	Sources/stm32f446xx_timer_driver.c # linking timer_driver
-
+	Sources/stm32f446xx_uart_driver.c # linking uart_driver
 	)
 
 set (PROJECT_DEFINES

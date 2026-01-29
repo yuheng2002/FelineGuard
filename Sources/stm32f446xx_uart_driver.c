@@ -15,7 +15,7 @@ void USART_Init(USART_Handle_t *pUSARTHandle){
 	uint8_t WordLen = pUSARTHandle->USART_Config.USART_WordLength;
 	uint8_t Parity = pUSARTHandle->USART_Config.USART_ParityControl;
 	uint8_t StopBits = pUSARTHandle->USART_Config.USART_StopBits;
-	uint32_t BuadRate = pUSARTHandle->USART_Config.USART_Baud;
+	uint32_t BaudRate = pUSARTHandle->USART_Config.USART_Baud;
 
 	/*
 	 * ==========================================
@@ -198,5 +198,71 @@ void USART_SetBaudRate(USART_RegDef_t *pUSARTx, uint32_t BaudRate){
 	pUSARTx->BRR |= (usartdiv_mantissa << shift_amount);
 
 	pUSARTx->BRR &= (~0xF); // clear Bits 3:0
-	pUSARTx->BRR |= (usart_fraction);
+	pUSARTx->BRR |= (usartdiv_fraction);
+}
+
+void USART_SendData(USART_Handle_t *pUSARTHandle, uint8_t *pTxBuffer, uint32_t Len){
+    /*
+     * Although C has strlen() to calculate string length using the null-terminator,
+     * it is best practice to let the caller pass the explicit length of the array.
+     * This avoids potential bugs with non-string data.
+     *
+     * Logically, the data transfer consists of two steps:
+     * 1. "Load" -> writing the current byte into the DR (Data Register).
+     * The DR acts as a "container" for the payload.
+     * 2. "Fire" -> Once the DR is loaded, the hardware "Shift Register" takes over.
+     * It physically generates the sequence of high/low voltages on the TX pin.
+     *
+     * To coordinate this, we need flags to know "Can I load?" and "Did it fire?".
+     * That's why we have the Status Register (SR):
+     * - Bit 7 TXE: Transmit Data Register Empty
+     * - Bit 6 TC:  Transmission Complete
+     *
+     * TXE defaults to 1. When it is 1, it means:
+     * "The data from the DR has been moved to the Shift Register."
+     * In other words: "I have done my part (loading). I am empty now. You can load again."
+     * Therefore, we MUST check if TXE is 1 before writing new data.
+     *
+     * TC also defaults to 1. It means "The transmission is fully complete."
+     * Think of an archer shooting an arrow:
+     * - TXE is like the archer's hand. If the hand is empty (TXE=1), he can grab another arrow.
+     * - TC is like the arrow hitting the target.
+     * Since checking TXE allows us to "reload" immediately while the previous arrow
+     * is still flying (pipeline effect), we don't strictly need to wait for TC
+     * between every byte. Checking TXE is faster and more efficient.
+     *
+     * As the driver developer, my job is simply to tell the MCU:
+     * 1. Here is the data.
+     * 2. Wait until it is safe to load the next byte.
+     *
+     * Once I write to the DR, the hardware automatically handles the electrical signals
+     * and updates the flags. I don't need to manually reset TXE; writing to DR clears it automatically.
+     *
+     * Note: This is a "Blocking" implementation.
+     * The CPU is stuck in a loop asking "Is TXE empty yet?" millions of times.
+     * Later, I will optimize this using Interrupts so the CPU can do other things while waiting.
+     */
+
+    // Use a pointer to access the hardware registers directly.
+    // Creating a copy (USART_RegDef_t curr = ...) would be wrong because
+    // we need to modify the actual hardware address, not a local variable.
+    USART_RegDef_t *pUSARTx = pUSARTHandle->pUSARTx;
+
+    for (uint32_t i = 0; i < Len; i++){
+
+        // Wait loop:
+        // We check Bit 7 (TXE) of the Status Register (SR).
+        // If it is 0 (NOT empty), we wait here.
+        // If it is 1 (Empty), the loop condition becomes false, and we proceed.
+        while( READ_BIT(pUSARTx->SR, 7) == 0 ); // do nothing when it is not ready to "load" again
+
+        // Extract the value from the pointer and write to Data Register.
+        // pTxBuffer is a pointer to uint8_t, meaning the compiler interprets
+        // the memory block as a sequence of 1-byte (8-bit) unsigned integers.
+        // The & 0xFF is a safety mask to ensure we only send 8 bits.
+        pUSARTx->DR = (*pTxBuffer & 0xFF);
+
+        // Increment the pointer to point to the next "box" (byte) in the memory array.
+        pTxBuffer++;
+    }
 }

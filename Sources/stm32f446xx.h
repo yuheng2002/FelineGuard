@@ -145,12 +145,12 @@ typedef struct{
  * ==========================================
  */
 typedef struct{
-	uint32_t IMR; // interrupt mask register -> offset 0x00
-	uint32_t EMR; // event mask register -> offset 0x04
-	uint32_t RTSR; // rising trigger selection register -> offset 0x08
-	uint32_t FTSR; // falling trigger selection register -> offset 0x0C
-	uint32_t SWIER; // software interrupt event register -> offset 0x10
-	uint32_t PR; // pending register -> offset 0x14
+	volatile uint32_t IMR; // interrupt mask register -> offset 0x00
+	volatile uint32_t EMR; // event mask register -> offset 0x04
+	volatile uint32_t RTSR; // rising trigger selection register -> offset 0x08
+	volatile uint32_t FTSR; // falling trigger selection register -> offset 0x0C
+	volatile uint32_t SWIER; // software interrupt event register -> offset 0x10
+	volatile uint32_t PR; // pending register -> offset 0x14
 } EXTI_RegDef_t;
 
 /*
@@ -159,9 +159,9 @@ typedef struct{
  * ==========================================
  */
 typedef struct{
-	uint32_t MEMRMP; // memory remap register -> offset 0x00
-	uint32_t PMC; // peripheral mode configuration register -> offset 0x04
-	uint32_t EXTICR[4]; // external interrupt configuration register 1 -> offset 0x08
+	volatile uint32_t MEMRMP; // memory remap register -> offset 0x00
+	volatile uint32_t PMC; // peripheral mode configuration register -> offset 0x04
+	volatile uint32_t EXTICR[4]; // external interrupt configuration register 1 -> offset 0x08
 					  // external interrupt configuration register 2 -> offset 0x0C
 					  // external interrupt configuration register 3 -> offset 0x10
 					  // external interrupt configuration register 4 -> offset 0x14
@@ -231,13 +231,13 @@ typedef struct{
  * following um1724 manual's recommendation (page 26)
  */
 typedef struct{
-	uint32_t SR;   // Status register, 					  Offset: 0x00
-	uint32_t DR;   // Data register,   					  Offset: 0x04
-	uint32_t BRR;  // Baud rate register,   			  Offset: 0x08
-	uint32_t CR1;  // Control register 1,   			  Offset: 0x0C
-	uint32_t CR2;  // Control register 2,   			  Offset: 0x10
-	uint32_t CR3;  // Control register 3,   			  Offset: 0x14
-	uint32_t GTPR; // Guard time and pre-scalar register, Offset: 0x18
+	volatile uint32_t SR;   // Status register, 				   Offset: 0x00
+	volatile uint32_t DR;   // Data register,   				   Offset: 0x04
+	volatile uint32_t BRR;  // Baud rate register,   			   Offset: 0x08
+	volatile uint32_t CR1;  // Control register 1,   			   Offset: 0x0C
+	volatile uint32_t CR2;  // Control register 2,   			   Offset: 0x10
+	volatile uint32_t CR3;  // Control register 3,   			   Offset: 0x14
+	volatile uint32_t GTPR; // Guard time and pre-scalar register, Offset: 0x18
 } USART_RegDef_t;
 
 /*
@@ -283,7 +283,7 @@ typedef struct{
  * ==========================================
  * Reference: RM0390 Reference Manual - USART Register map
  */
-#define USART2  ((USART2_RegDef_t*)USART2_BASEADDR)
+#define USART2  ((USART_RegDef_t*)USART2_BASEADDR)
 
 /*
  * ==========================================
