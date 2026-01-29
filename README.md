@@ -39,8 +39,8 @@ I am manually configuring the microcontroller registers to understand how the ha
 ### Phase 1: The Basics (Current Focus)
 *Goal: Make the motor spin precisely without HAL.*
 - [x] Hardware wiring (STM32 -> A4988 -> Motor).
-- [ ] Write GPIO driver to control the A4988 Direction pin.
-- [ ] Configure TIM2 to generate PWM pulses for the Step pin.
+- [x] Write GPIO driver to control the A4988 Direction pin.
+- [x] Configure TIM2 to generate PWM pulses for the Step pin.
 - [ ] Verification: Check the PWM frequency with a Logic Analyzer.
 
 ### Phase 2: Control & Safety (This Week)
