@@ -16,7 +16,7 @@ It seems simple, but that is only because someone else already wrote all the dri
 Like other peripherals, USART has many registers. For my testing purposes, I defined a configuration struct with five key settings: **Mode**, **WordLength**, **Parity**, **StopBits**, and **BaudRate**.
 
 I used the standard **"8-N-1"** protocol:
-* **WordLength = 8 bits**: Standard data size (instead of 9).
+* **WordLength = 8 bits**: Standard data size (instead of 9 & also because I will not enable Parity check).
 * **Parity = None**: I know parity checks are powerful for unstable connections, but since my STM32 is connected via a solid USB cable right next to my desktop, I don't need the extra overhead.
 * **StopBits = 1**: I learned that Stop Bits are like letting the receiver "catch their breath" between data chunks. 0.5 would be too fast, and 2 would be too slow/wasteful. The middle value, 1, is the standard.
 
