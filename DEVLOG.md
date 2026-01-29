@@ -36,6 +36,7 @@ In limited-resource environments (like STM32 or 8-bit MCUs), every bit of optimi
 Consider this polling loop:
 ```c
 while ( ! (USART2->SR & TXE) ); // Wait until Transmit Empty flag is set
+```
 
 ## 2026-01-27: Motor Testing & PWM Logic Deep Dive
 
