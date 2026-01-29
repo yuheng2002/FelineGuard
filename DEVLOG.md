@@ -37,6 +37,16 @@ Consider this polling loop:
 ```c
 while ( ! (USART2->SR & TXE) ); // Wait until Transmit Empty flag is set
 ```
+If I compile this with `-O2` optimization without `volatile`, the CPU assumes `USART2->SR` is just a regular variable in memory. It thinks, "This value doesn't change inside the loop, so I'll just load it once to save time."
+
+In Assembly, it might look like this:
+```assembly
+LDR R0, [R1]     ; Load SR value into Register R0 (Only happens once!)
+Loop:
+    CMP R0, #0   ; Check if R0 is 0
+    BEQ Loop     ; If equal, branch back to Loop
+```
+The result: The CPU keeps checking the cached value in `R0`. Meanwhile, the actual hardware flag in the `SR` register might have flipped to 1 because the data transfer finished, but the CPU never looks at the physical address again. The program hangs in an infinite loop.
 
 ## 2026-01-27: Motor Testing & PWM Logic Deep Dive
 
