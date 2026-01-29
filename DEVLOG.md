@@ -1,32 +1,88 @@
 # FelineGuard Engineering Log
 
+Here is the refined version of your dev log. I have kept your personal tone, your logic regarding the CSE30 assembly concepts, and your "aha!" moments, but I smoothed out the grammar and clarified the technical explanations (especially the parts about optimization and hardware behavior).
+
+```markdown
 ## 2026-01-28: USART2 Setup & Enhanced Understanding of Volatile
-Today, I implemented basic usart drivers and printed from my STM32 MCU to the VSCode Serial Monitor my first testing message "Motor System Initialized!".
 
-Now, this basic Serial Print itself is not difficult or impressive at all. I recognize it is very basic. However, just recently, in my ESP32 IoT experience in this ECE140A course I am taking, I only had to do three things to print to the Serial Monitor.
-1. I physically connect my ESP32 with my desktop using the ESP32 cable.
-2. I call "Serial.begin(115200);"
-3. I call Serial.print("--- testing ---")
-Seems pretty simple, but it is because someone already wrote all the drivers to set up the peripherals in my ESP32 board in the background and keep those functions in the standard Arduino library, but now by implementing the usart drivers on my STM32 board myself, I am able to fully understand at the register level the interaction between my STM32 board and my PC.
+Today, I implemented basic USART drivers and successfully printed my first test message, "Motor System Initialized!", from my STM32 MCU to the VSCode Serial Monitor.
 
-Just like other peripherals, USART also has many registers, and within each register, different sets of bits serve different purposes. For my testing purpose, I only had to define a struct that has 5 configurations. Mode, WordLength, Parity(odd, even, or none), stopbits(0.5, 1, 1.5, 2), and baudrate. I used the standard "8-N-1" protocol, which means wordlength is 8 bits, not 9, and None parity checksum (as far as I learned, parity check is a powerful tool, but it is more used when the connection between devices is not stable, but in my case, my STM32 is right next to my desktop, conneted by a solid USB cable, so I do not need to use it just to save myself some trouble). and lastly, '1' refers to StopBits, as far as I have learned, its like someone needs to "catch his breathe" while taking, 0.5 would be too fast, while 2 would be too slow, so I just use the middle value 1, which seems to be pretty standard. As for Mode, PA2 support USART2/TX when set to AF7, and PA3 supports USART2/RX when set to AF7, so I just configured those two GPIOs. BaudRate is set to 115200, but instead of just calling that mysterious function Serial.begin(115200) in C++ using Arduino library, I had to manually implement a USART_SetBaudRate function where I set Oversampling to 16 (Over8=0) and used the corresponding equation. I also looked into the datasheet to confirm that, at default, my CPU runs at 16MHz, so everything checks out.
+This basic Serial Print might not look impressive on the surface. In my ECE140A IoT course, printing to the Serial Monitor with an ESP32 only takes three steps:
+1. Connect the ESP32 to the desktop via cable.
+2. Call `Serial.begin(115200);`.
+3. Call `Serial.print("--- testing ---");`.
 
-Now, another key takeaway is that, since I started learning the basics of Bare-Metal STM32 driver development about a month ago, I learned that it is important to use the volatile keyword to"avoid compiler optimizing code logic and just ignoring register values", but this is merely a very vague understanding. Just recently, I learned in my current course CSE30 about assembly language and ARM instructions, I finally put everything together to secure a solid logic chain. 
+It seems simple, but that is only because someone else already wrote all the drivers in the background to handle the peripherals. By implementing the USART drivers on the STM32 myself, I have finally gained a full, register-level understanding of how the board actually interacts with my PC.
 
-I learned in CSE30 that, what makes a do while loop better than a regular while loop is that, a do while loop checks the condition once at first, and then it immediately jumps into the first line of code in the while loop, and then only checks again the same condition to see if it should repeat the same thing at the end of the while loop, which means that, if the loop is supposed to run N times, it executes N + 1 "brach instructions", whereas the normal while loop executes 2N branch instructions. Now, if only with my previous experience and understanding of CS algorithm, this all equates to O(n), which shouldnt matter at all. However, in limited-resouce development envinroment, such as using a STM32 board, or maybe even another 8-bit, 16-bit Microcontroller, every bit of optimization matters. It all comes down to the number of instructions the CPU of my board has to execute, because eventually these arm instructions will be translated to machine language of a bunch of 1s and 0s, but in order to execute these, the peripherals has to "behave accordingly", right? I am not an expert in terms of hardware, but I understand that the board seems to do this by "strike" or whatever even electrons? I don't know, but the thing is, optimized code will help the MCU live longer, draws less power, otherwise what is the point of optimization? Anyways, this is just a quick example I thought of.
+### USART Configuration (The 8-N-1 Protocol)
 
-Let's get back to the volatile concept.
+Like other peripherals, USART has many registers. For my testing purposes, I defined a configuration struct with five key settings: **Mode**, **WordLength**, **Parity**, **StopBits**, and **BaudRate**.
 
-With what I just mentioned above, I wanted to point out that, just because I need to optimize performance, it does not mean that I need to manually translate every C code I write in assembly language, which would just make it 100 times harder than it already is and slow down the whole process. That's where the compilation optimizer comes in (hopefully thats what its called), it knows how to simply our "stupid and redundant C code" to effiecient assembly code that does the same thing. For example, in this simple while loop (while ! (USART2->SR & XE)), with -O2 optimization, the CPU does not know if the value of SR actually maps to an actual physical memory address on a STM32 MCU, it could just be some virtual garbage value I made up, right? so it will load the value, lets say R1, to R0, so LDR R0, [R1], and then goes to the loop, Loop:CMP R0, #0, BEQ Loop. Now, this is where it will cause problems. the CPU is now reading the value of USART->SR as what it previously stored in its cached register r0, but this register value could be changed due to physical facotrs, such as what if something goes wrong with the physical circuit? Or whatever, I cannot think of cases as I never encounted any. But, if I add the volatile keyword in the USART_RegDef_t struct member variable SR, the CPU cannot be "lazy" and will always execute LDR R0, [R1]
-CMP R0, #0
-BEQ Loop
-It ALWAYS checks that value before executing any of the code inside the while loop, which is exactly what we want it to do.
+I used the standard **"8-N-1"** protocol:
+* **WordLength = 8 bits**: Standard data size (instead of 9).
+* **Parity = None**: I know parity checks are powerful for unstable connections, but since my STM32 is connected via a solid USB cable right next to my desktop, I don't need the extra overhead.
+* **StopBits = 1**: I learned that Stop Bits are like letting the receiver "catch their breath" between data chunks. 0.5 would be too fast, and 2 would be too slow/wasteful. The middle value, 1, is the standard.
 
-Thus, since I define a struct called USART_RegDef_t which has all the registers defined in the USART register map, and also the memory address offsets are aligned using the technique that, the different between two registers is 4 bytes, and uint32_t is 4 bytes, so upon me pre-defining a USART_RegDef_t pointer USART2, when I do USART2->SR, it WILL access the actual SR register of USART2, so this is our last defence, I must put the keyword volatile before this register member variable.
+For the **Mode**, I checked the datasheet and found that **PA2** supports USART2/TX and **PA3** supports USART2/RX when set to Alternate Function 7 (**AF7**), so I configured those GPIOs accordingly.
 
-Now, I actually forgot to do this when I was writing my code yesterday, so I didnt have either for my USART register definition struct, but it still worked, I am assuming that either I am lucky, or it was because I was in debug mode by default, instead of being in release mode, which will turn on -O2 optimization automatically.
+For **BaudRate**, instead of just calling the mysterious `Serial.begin(115200)` function in the Arduino library, I manually implemented a `USART_SetBaudRate` function. I set Oversampling to 16 (`OVER8=0`) and calculated the value using the standard equation, confirming via the datasheet that my CPU runs at 16MHz by default.
 
-So, I learned a lot from today's experience, especially in terms of why exactly we really need volatile, from assembly language level, and how basic USART protocol works.
+### The "Volatile" Keyword & Assembly Optimization
+
+A key takeaway from today is understanding the `volatile` keyword. When I started bare-metal development a month ago, I knew `volatile` was used to "stop the compiler from breaking things," but my understanding was vague. Recently, while learning about Assembly Language and ARM instructions in my **CSE30** course, I finally connected the dots.
+
+In CSE30, I learned that code efficiency comes down to the number of instructions the CPU executes. For example, a `do-while` loop can sometimes be more efficient than a `while` loop because of how branch instructions are handled. In limited-resource environments (like STM32 or 8-bit MCUs), every bit of optimization matters. Fewer instructions mean fewer clock cycles, which ultimately means the MCU draws less power and runs more efficiently.
+
+However, we don't write everything in Assembly because it would make development painfully slow. We rely on the **Compiler Optimizer** to translate our "redundant C code" into efficient Assembly. But sometimes, the optimizer is *too* smart for its own good.
+
+#### The Problem with Optimization in Hardware
+Consider this polling loop:
+```c
+while ( ! (USART2->SR & TXE) ); // Wait until Transmit Empty flag is set
+
+```
+
+If I compile this with `-O2` optimization *without* `volatile`, the CPU assumes `USART2->SR` is just a regular variable in memory. It thinks, "This value doesn't change inside the loop, so I'll just load it once to save time."
+
+In Assembly, it might look like this:
+
+```assembly
+LDR R0, [R1]     ; Load SR value into Register R0 (Only happens once!)
+Loop:
+    CMP R0, #0   ; Check if R0 is 0
+    BEQ Loop     ; If equal, branch back to Loop
+
+```
+
+**The result:** The CPU keeps checking the *cached* value in R0. Meanwhile, the actual hardware flag in the `SR` register might have flipped to 1 because the data transfer finished, but the CPU never looks at the physical address again. The program hangs in an infinite loop.
+
+#### The Volatile Solution
+
+By adding the `volatile` keyword to the `SR` member in my `USART_RegDef_t` struct, I force the compiler to be "less lazy." It tells the compiler: *"The value at this address can change at any time (by hardware), so do not cache it."*
+
+The resulting Assembly becomes:
+
+```assembly
+Loop:
+    LDR R0, [R1] ; ALWAYS re-load the value from the physical memory address
+    CMP R0, #0
+    BEQ Loop
+
+```
+
+This ensures the CPU always checks the real state of the hardware register.
+
+### Struct Alignment
+
+I also reinforced my understanding of struct memory mapping. Since `uint32_t` is exactly 4 bytes, and the STM32 registers are aligned by 4 bytes, defining a struct `USART_RegDef_t` with `uint32_t` members automatically aligns my code with the physical memory offsets.
+
+**Correction on yesterday's code:** I actually forgot to add `volatile` to my struct definition yesterday! It still worked, likely because I was compiling in **Debug Mode** (which usually defaults to `-O0` optimization). If I had switched to **Release Mode** (which enables `-O2`), my code likely would have broken.
+
+Today solidified the link between high-level C code, Assembly instructions, and the physical behavior of the processor.
+
+```
+
+```
 
 ## 2026-01-27: Motor Testing & PWM Logic Deep Dive
 
