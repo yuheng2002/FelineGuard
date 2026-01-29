@@ -31,7 +31,9 @@
 USART_Handle_t USART2_Handle; // declared here to reuse in USART_SendData in main() function
 
 void software_delay(uint32_t count){
-    for(uint32_t i = 0; i < count; i++);
+    for(uint32_t i = 0; i < count; i++){
+    	__asm("NOP");
+    }
 }
 
 void Setup_Peripherals(void){ // void as parameter emphasizes that this function will not take in anything
@@ -162,14 +164,28 @@ int main(void)
 {
 	Setup_Peripherals(); // set up hardware
 
-	// TIM_SetCompare1(TIM2, 4999); // keep it spinning for testing purposes
-
-	// GPIO_WriteToOutputPin(GPIOA, 1, DISABLE); // not sure which direction this is, but leave it here for testing purpose
-
-	char my_msg[] = "Motor System Initialized!\r\n";
+	GPIO_WriteToOutputPin(GPIOA, 1, DISABLE);
 
 	while (1){
-		USART_SendData(&USART2_Handle, (uint8_t*)my_msg, strlen(my_msg));
-		software_delay(5000000);
+		// LED2 blinks to indicate system working
+		// or maybe I will just print a message "system working" every 10 seconds...
+		uint8_t command = USART_ReceiveData(&USART2_Handle);
+
+		if (command == 'F'){
+			TIM_SetCompare1(TIM2, 2000);
+			software_delay(2000000);
+			TIM_SetCompare1(TIM2, 0);
+
+			char done_msg[] = "Feed Complete.\r\n";
+			USART_SendData(&USART2_Handle, (uint8_t*)done_msg, strlen(done_msg));
+
+		}
+		else if (command == 'H') { // H for "Hello" or "Handshake"{
+			char ready_msg[] = "System Ready!\r\n";
+			USART_SendData(&USART2_Handle, (uint8_t*)ready_msg, strlen(ready_msg));
+		}
+		else {
+			TIM_SetCompare1(TIM2, 0);
+		}
 	}
 }

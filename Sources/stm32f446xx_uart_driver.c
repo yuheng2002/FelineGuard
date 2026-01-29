@@ -266,3 +266,38 @@ void USART_SendData(USART_Handle_t *pUSARTHandle, uint8_t *pTxBuffer, uint32_t L
         pTxBuffer++;
     }
 }
+
+uint8_t USART_ReceiveData(USART_Handle_t *pUSARTHandle){
+	USART_RegDef_t *USARTx = pUSARTHandle->pUSARTx;
+
+	/*
+	 * ------------------------------
+	 * Step 1: Wait for Data (Blocking)
+	 * ------------------------------
+	 * We check the RXNE (Read Data Register Not Empty) flag in the Status Register (SR).
+	 * - Bit 5 (RXNE) = 0: No data received yet.
+	 * - Bit 5 (RXNE) = 1: Data has arrived and is ready to be read.
+	 *
+	 * Note: This is a "Blocking" implementation. The CPU will stay in this while-loop
+	 * forever until a byte is physically received.
+	 * Make sure to check SR (Status Register), not CR1!
+	 */
+	while ( READ_BIT(USARTx->SR, 5) == 0){};
+
+	/*
+	 * ------------------------------
+	 * Step 2: Read from Data Register
+	 * ------------------------------
+	 * Logic Comparison:
+	 * - In `USART_SendData`, the STM32 acts as the "Transmitter." It takes data
+	 * stored in its Flash memory (our string) and pushes it out.
+	 * * - In `USART_ReceiveData`, the STM32 acts as the "Receiver."
+	 * When the PC sends a character (like 'F') via USB cable, the hardware
+	 * automatically loads that byte into the Data Register (DR).
+	 * * According to the Reference Manual, the DR functions as a dual-purpose buffer:
+	 * it contains transmitted data when writing, and received data when reading.
+	 * * So, we simply read the DR to get the external command.
+	 * Example: If we read 'F', we trigger the logic to turn the motor (and feed the cat).
+	 */
+	return (uint8_t)(USARTx->DR & 0xFF); // Masking with 0xFF for safety
+}

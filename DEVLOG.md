@@ -1,5 +1,45 @@
 # FelineGuard Engineering Log
 
+# 2026-01-28: USART2 Serial Debugging + Python Testing
+
+Following the implementation of my USART2 drivers, I successfully printed simple test messages using the VSCode Serial Monitor extension. I was also able to simulate the "cat feeding" process by sending the 'F' command to the STM32 to trigger the motor.
+
+However, I ran into several issues along the way. Solving them taught me how to optimize hardware behavior to match my expectations—something real developers do constantly. A product shouldn't just "work" once; it needs to be reliable (I plan to add a WatchDog timer later). Here is my debugging process:
+
+### The "Garbage Data" Issue
+
+Initially, I tried printing a simple "welcome message" before the `while(1)` loop. However, I kept receiving 4 random replacement characters every time I flashed the code. I tried adding a software delay to let the system settle and even attempted to clear "invisible" `\r\n` characters, but nothing worked.
+
+I realized this likely isn't a code issue, but rather **hardware electrical jitter** (floating pins during startup). The physical solution would be attaching a pull-up resistor to the TX pin. However, that seems unnecessary for my current prototype. As long as the baud rates match and the PC and STM32 "speak the same language," I can handle this in software.
+
+### Switching to Python
+
+I decided to stop using the pre-packaged Serial Monitor. It felt too much like the Arduino library—an external, encapsulated tool. I wanted to go a level deeper and build my own tool using Python.
+
+Even though I’m still using Python's `serial` and `time` libraries, I now have full control over the communication logic.
+
+At first, my Python script could:
+
+1. Print its own status messages.
+2. Send commands (like 'F') to the STM32 to spin the motor.
+
+However, I realized this was essentially **one-way communication**. The script was just "talking at" the STM32 without knowing if the board actually received the command. This wasn't the interactive two-way system I wanted.
+
+### Implementing Two-Way Communication
+
+To fix this, I added `response = ser.readline().decode('utf-8', errors='ignore').strip()` to let the script "listen" to the board. I also implemented connection safeguards:
+
+1. **Startup Logic:** Since I can't easily fix the hardware jitter, I decided to work around it. I accept that garbage data exists at startup. My solution is to wait (`time.sleep()`) and then flush the buffer (`ser.reset_input_buffer()`) to clear the noise before actual communication begins.
+2. **Handshake Command ('H'):** Since the Python script and the STM32 board don't always start at the exact same time, I added an 'H' command. This allows me to manually "ping" the board to check if the connection is still alive—very useful if I leave the script running but unplug the STM32 (or if I forget what I did the night before!).
+
+### Conclusion
+
+This process touched on concepts like **Synchronous vs. Asynchronous communication** (and device synchronization). While I'm still learning the nuances, this was a great start.
+
+I really appreciate diving deep into Bare-Metal drivers. It allows me to understand exactly what is happening physically when I control hardware with Embedded C.
+
+---
+
 # 2026-01-28: USART2 Setup & Enhanced Understanding of Volatile
 
 Today, I implemented basic USART drivers and successfully printed my first test message, "Motor System Initialized!", from my STM32 MCU to the VSCode Serial Monitor.

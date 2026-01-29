@@ -90,5 +90,5 @@ void USART_Init(USART_Handle_t *pUSARTHandle);
 void USART_SetBaudRate(USART_RegDef_t *pUSARTx, uint32_t BaudRate);
 
 void USART_SendData(USART_Handle_t *pUSARTHandle, uint8_t *pTxBuffer, uint32_t Len);
-
+uint8_t USART_ReceiveData(USART_Handle_t *pUSARTHandle);
 #endif /* SOURCES_STM32F446XX_UART_DRIVER_H_ */
