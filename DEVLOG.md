@@ -48,6 +48,25 @@ Loop:
 ```
 The result: The CPU keeps checking the cached value in `R0`. Meanwhile, the actual hardware flag in the `SR` register might have flipped to 1 because the data transfer finished, but the CPU never looks at the physical address again. The program hangs in an infinite loop.
 
+### The Volatile Solution
+By adding the `volatile` keyword to the `SR` member in my `USART_RegDef_t` struct, I force the compiler to be "less lazy." It tells the compiler: "The value at this address can change at any time (by hardware), so do not cache it."
+
+The resulting Assembly becomes:
+```Assembly
+Loop:
+    LDR R0, [R1] ; ALWAYS re-load the value from the physical memory address
+    CMP R0, #0
+    BEQ Loop
+```
+This ensures the CPU always checks the real state of the hardware register.
+
+### Struct Alignment
+I also reinforced my understanding of struct memory mapping. Since `uint32_t` is exactly 4 bytes, and the STM32 registers are aligned by 4 bytes, defining a struct `USART_RegDef_t` with `uint32_t` members automatically aligns my code with the physical memory offsets.
+
+Correction on yesterday's code: I actually forgot to add `volatile` to my struct definition yesterday! It still worked, likely because I was compiling in Debug Mode (which usually defaults to `-O0` optimization). If I had switched to Release Mode (which enables `-O2`), my code likely would have broken.
+
+Today solidified the link between high-level C code, Assembly instructions, and the physical behavior of the processor.
+
 ## 2026-01-27: Motor Testing & PWM Logic Deep Dive
 
 Today, following the successful physical connections made yesterday between the STM32 board, the A4988 Motor Driver, and the NEMA 17 Stepper Motor, I was able to reuse both the GPIO driver and the TIM driver I previously implemented for the PWM breathing LED demo.
