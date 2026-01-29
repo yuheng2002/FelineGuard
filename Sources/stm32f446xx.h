@@ -295,4 +295,6 @@ typedef struct{
  */
 #define EXTI15_10_IRQ (40)
 
+#define USART2_IRQ    (38)
+
 #endif /* SOURCES_STM32F446XX_H_ */

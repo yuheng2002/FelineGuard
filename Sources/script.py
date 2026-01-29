@@ -62,6 +62,10 @@ try:
         # .upper() handles 'f' and 'F' automatically.
         user_input = input("Enter command (F to feed cat, H to ping, Q to quit): ").upper()
 
+        # Reset Buffer before using ser.write(b...) to send any command to STM32
+        # this clears any culmulated "garbage messages" or "history messages"
+        ser.reset_input_buffer()
+
         # --- QUIT LOGIC ---
         if user_input == 'Q':
             print("Exiting program...")
@@ -110,9 +114,18 @@ try:
 # ==========================================
 # 4. Safe Shutdown
 # ==========================================
+# Handles errors gracefully
 except KeyboardInterrupt:
-    # Handles the Ctrl+C event gracefully
+    # Handles the Ctrl+C event
     print("\nProgram terminated by Ctrl + C.")
+
+except serial.SerialException as e:
+    # this will catch the exception when I unplug STM32 during middle of this Python script
+    print(f"\n[Error] Connection lost! The device seems to be disconnected: {e}")
+
+except Exception as e:
+    # some errors other than the two already covered
+    print(f"\n[Error] An unexpected error occurred: {e}")
 
 finally:
     # Best Practice: Always close the resource.

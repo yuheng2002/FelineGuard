@@ -29,6 +29,7 @@
 
 /* --- Global Variables --- */
 USART_Handle_t USART2_Handle; // declared here to reuse in USART_SendData in main() function
+uint8_t message = 0; // data collected from USART2 data register
 
 void software_delay(uint32_t count){
     for(uint32_t i = 0; i < count; i++){
@@ -158,6 +159,71 @@ void Setup_Peripherals(void){ // void as parameter emphasizes that this function
 	USART2_Handle.USART_Config.USART_Baud = USART_Baud_115200;
 
 	USART_Init(&USART2_Handle);
+
+	/*
+	 * ==============================
+	 * USART2 Interrupt Set Up
+	 * ==============================
+	 * Reference: Table 163. USART interrupt requests
+	 *
+	 * In order to use interrupt for USART
+	 * [RXNEIE] must be enabled
+	 *
+	 * Control register 1 (USART_CR1)
+	 * Bit 5 RXNEIE: RXNE interrupt enable
+	 * 0: Interrupt is inhibited
+	 * 1: An USART interrupt is generated whenever ORE=1 or RXNE=1 in the USART_SR register
+	 */
+	SET_BIT(USART2->CR1, 5);
+
+	/*
+	 * ==============================
+	 * Enable USART2 (IRQ = 38) -> NVIC
+	 * ==============================
+	 */
+	USART_IRQInterruptConfig(USART2_IRQ , ENABLE);
+}
+
+/*
+ * ==========================================
+ * Interrupt Service Routine (ISR) for USART2
+ * ==========================================
+ * This function handles the Hardware Interrupt triggered by USART2
+ *
+ * KEY CONCEPT:
+ * Unlike standard C functions, this is NOT called by main().
+ * It is invoked directly by the Hardware (NVIC) via the Vector Table
+ * when the specific interrupt event occurs.
+ */
+void USART2_IRQHandler(void){
+	/*
+	 * there is no pending register to manually clear
+	 * since USART interrupt does NOT go through EXTI
+	 *
+	 * Also, in SR (Status Register)
+	 * Bit 5 RXNE: Read data register not empty
+	 * It says:
+	 * [This bit is set by hardware when the content of the RDR shift register
+	 * has been transferred to the USART_DR register. An interrupt is generated
+	 * if RXNEIE=1 in the USART_CR1 register.
+	 * It is cleared by a read to the USART_DR register.]
+	 * ->
+	 * this tells us that, the hardware will automatically reset this register
+	 * once the data in Data Register is read, so we do not need to manually reset it
+	 *
+	 * [READ ONLY!]
+	 * Reading DR automatically clears the RXNE flag.
+	*/
+	message = ( (USART2->DR) & 0xFF );
+
+	/*
+	 * [Commented Out] because:
+	 * DR is meant for both TX and RX
+	 * it is both the RDR (receive data register) and TDR (transmit data register)
+	 * overwriting it manually each time after the it receives a byte
+	 * might cause it to accidentally transmit a byte
+	 */
+	// USART2->DR = 0;
 }
 
 int main(void)
@@ -166,25 +232,33 @@ int main(void)
 
 	GPIO_WriteToOutputPin(GPIOA, 1, DISABLE);
 
-	while (1){
-		// LED2 blinks to indicate system working
-		// or maybe I will just print a message "system working" every 10 seconds...
-		uint8_t command = USART_ReceiveData(&USART2_Handle);
+	char boot_msg[] = "STM32 Power ON\r\n";
+	USART_SendData(&USART2_Handle, (uint8_t*)boot_msg, strlen(boot_msg));
 
-		if (command == 'F'){
+	while (1){
+		if (message == 'F'){
+			// 1. Execute Action
 			TIM_SetCompare1(TIM2, 2000);
 			software_delay(2000000);
 			TIM_SetCompare1(TIM2, 0);
 
+			// 2. Respond to PC
 			char done_msg[] = "Feed Complete.\r\n";
 			USART_SendData(&USART2_Handle, (uint8_t*)done_msg, strlen(done_msg));
 
+			// 3. [CRITICAL]: Reset the flag/buffer
+			// otherwise the loop will execute this block forever!
+			message = 0;
 		}
-		else if (command == 'H') { // H for "Hello" or "Handshake"{
+		else if (message == 'H') { // H for "Hello" or "Handshake"{
 			char ready_msg[] = "System Ready!\r\n";
 			USART_SendData(&USART2_Handle, (uint8_t*)ready_msg, strlen(ready_msg));
+
+			// Reset here too!
+			message = 0;
 		}
 		else {
+			// do nothing, motor stays off
 			TIM_SetCompare1(TIM2, 0);
 		}
 	}

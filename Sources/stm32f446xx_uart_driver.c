@@ -301,3 +301,51 @@ uint8_t USART_ReceiveData(USART_Handle_t *pUSARTHandle){
 	 */
 	return (uint8_t)(USARTx->DR & 0xFF); // Masking with 0xFF for safety
 }
+
+/*
+ * Interrupt set-enable register (NVIC_ISER) is a contiguous sequence of eight 4-byte memory blocks
+ * the rule is as follows:NVIC_ISER0 bits 0 to 31 are for interrupt 0 to 31, respectively
+ * NVIC_ISER1 bits 0 to 31 are for interrupt 32 to 63, respectively
+ * ....
+ * NVIC_ISER6 bits 0 to 31 are for interrupt 192 to 223, respectively
+ * NVIC_ISER7 bits 0 to 15 are for interrupt 224 to 239, respectively
+ */
+void USART_IRQInterruptConfig(uint8_t IRQNumber, uint8_t EnableOrDisable){
+	/*
+	 * ==============================
+	 * 	  1. Locate the register
+	 * ==============================
+	 * Calculate which ISER register (0-7) contains the target IRQ.
+	 * ------------------------------
+	 * Formula:
+	 * Block = IRQ / 32
+	 * ------------------------------
+	 * e.g. IRQ = 38 (USART2 -> position 38)
+	 * so, Block = 38 / 32 = 1
+	 * it is indeed in NVIC_ISER[1]
+	 */
+	uint8_t register_num = IRQNumber / 32;
+
+	/*
+	 * ==============================
+	 * 		2. Locate the Bit
+	 * ==============================
+	 * Each bit in each block controls 1 specific IRQ
+	 * [one bit controls one IRQ]
+	 * ------------------------------
+	 * e.g. IRQ = 38
+	 * so, it is at 38 % 32 = 6 -> Target is Bit 6
+	 */
+	uint8_t target_bit = IRQNumber % 32;
+
+	/*
+	 * ==============================
+	 * 	  3. Enable the register
+	 * ==============================
+	 * Write:
+	 * 0: No effect (Refer to PM0214 4.3.2)
+	 * 1: Enable interrupt
+	 * We simply write a 1 to the specific bit position
+	 */
+	SET_BIT(NVIC_ISER->ISER[register_num], target_bit);
+}
