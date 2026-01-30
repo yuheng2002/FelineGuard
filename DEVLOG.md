@@ -14,14 +14,16 @@ I learned that although the IWDG has fewer registers than most peripherals, its 
 
 * **The Locking Mechanism:** The KR is "locked" by default. I first need to write `0x5555` (the access code) to it. Only then can I write to the PR and RLR to configure the timing.
 * **The "Feeding" Logic:** The core mechanism is essentially a down-counter. Once I set the counter, I must regularly write a reload value to the KR to "feed" the dog. If I don't feed it in time, the counter hits zero and hard-resets the entire system.
-* **Independent Clock:** Unlike other peripherals, the RCC (Reset and Clock Control) does not enable the IWDG's clock. It runs on its own internal 32MHz clock (LSI). This makes perfect sense: you wouldn't want the safety system that reboots your MCU to rely on the same clocks that might have caused the crash in the first place.
+* **Independent Clock:** Unlike other peripherals, the RCC (Reset and Clock Control) does not enable the IWDG's clock. It runs on its own internal 32kHz clock (LSI). This makes perfect sense: you wouldn't want the safety system that reboots your MCU to rely on the same clocks that might have caused the crash in the first place.
 * **Activation:** As long as the MCU is powered, writing the access keys activates the IWDG. The final step is to "start the engine" by writing `0xCCCC` to the KR.
 
 **How do I know if the dog bit me?**
 If the system crashes and the IWDG reboots the board, I can't exactly serial print a "System Crashing..." message *during* the crash. The solution lies in the **RCC Control & Status Register (CSR)**. Even though the system resets, the hardware flags the *source* of the reset in this register. So, inside my setup function (which runs immediately after a reboot), I check this "mailbox." If the IWDG flag is set, I know a watchdog reset occurred.
 
 **The Math:**
-`IWDG_Frequency = 32kHz / Prescaler` (assuming LSI is 32kHz, typically, not 32MHz, but the logic holds).
+`IWDG_Frequency = 32kHz / Prescaler` (according to 3.21.4 in the datasheet, "It is
+clocked from an independent 32 kHz internal RC and as it operates independently from the
+main clock").
 If I set the Prescaler to 32, I get a 1kHz frequency (1 tick/ms). To get a 1-second timeout, I set the Reload Register (RLR) to 1000. This ensures the watchdog checks the system every second.
 
 ### 2. The Problem with Software Delay
