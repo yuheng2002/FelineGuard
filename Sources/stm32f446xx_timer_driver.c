@@ -16,7 +16,7 @@ void TIM_PWM_Init(TIM_Handle_t *pTIMHandle){
 	// 1. Set PSC (Speed)
 	pTIMx->PSC = TIM_Config.Prescaler; // TIM_Config is NOT a pointer (it is an object), use .
 
-	// 2. Set ARR (Period/Frequency)
+	// 2. Set ARR (Period/Duration)
 	pTIMx->ARR = TIM_Config.Period;
 
 	/*
@@ -73,4 +73,78 @@ void TIM_PWM_Init(TIM_Handle_t *pTIMHandle){
 void TIM_SetCompare1(TIM_RegDef_t *pTIMx, uint32_t CaptureValue){
 	// Writing to CCR1 changes the duty cycle (brightness)
 	pTIMx->CCR1 = CaptureValue;
+}
+
+/*
+ * NOTE:
+ * I am currently still using the General TIM_RegDef_t struct defined in overall header filer
+ * HOWEVER! I checked the TIM6&7 Register map
+ *
+ * They have far fewer registers available to use than General Purpose Timers (TIM2/3...)
+ * I still use it because, for TIM 6:
+ * DIER also has Offset: 0x0C
+ * PSC also has Offset: 0x28
+ * ARR also has Offset: 0x2C
+ *
+ * BUT I will most likely refractor later to make things more clear
+ */
+void TIM_Basic_Init(TIM_Handle_t *pTIMHandle){
+	TIM_RegDef_t* pTIMx = pTIMHandle->pTIMx;
+	TIM_Config_t TIM_Config = pTIMHandle->TIM_Config;
+
+	// 1. Set PSC (Speed)
+	pTIMx->PSC = TIM_Config.Prescaler;
+
+	// 2. Set ARR (Period/Duration)
+	pTIMx->ARR = TIM_Config.Period;
+
+	// 3. Enable Update Interrupt (UIE) in DIER Register
+	// Bit 0: UIE (Update Interrupt Enable)
+	// 0: Update interrupt disabled.
+	// 1: Update interrupt enabled.
+	// When set, an interrupt is generated when the counter overflows/updates.
+	SET_BIT(pTIMx->DIER, 0);
+
+	// NOTE: We do NOT enable the Counter (CR1_CEN) here.
+	// We want to start it manually in the main loop logic.
+}
+
+void TIM_IRQInterruptConfig(uint8_t IRQNumber, uint8_t EnableOrDisable){
+	/*
+	 * ==============================
+	 * 	  1. Locate the register
+	 * ==============================
+	 * Calculate which ISER register (0-7) contains the target IRQ.
+	 * ------------------------------
+	 * Formula:
+	 * Block = IRQ / 32
+	 * ------------------------------
+	 * e.g. IRQ = 38 (USART2 -> position 38)
+	 * so, Block = 38 / 32 = 1
+	 * it is indeed in NVIC_ISER[1]
+	 */
+	uint8_t register_num = IRQNumber / 32;
+
+	/*
+	 * ==============================
+	 * 		2. Locate the Bit
+	 * ==============================
+	 * Each bit in each block controls 1 specific IRQ
+	 * [one bit controls one IRQ]
+	 * ------------------------------
+	 * e.g. IRQ = 38
+	 * so, it is at 38 % 32 = 6 -> Target is Bit 6
+	 */
+	uint8_t target_bit = IRQNumber % 32;
+
+	/*
+	 * ==============================
+	 * 	  3. Enable the register
+	 * ==============================
+	 * Write:
+	 * 0: No effect (Refer to PM0214 4.3.2)
+	 * 1: Enable interrupt
+	 * We simply write a 1 to the specific bit position
+	 */
+	SET_BIT(NVIC_ISER->ISER[register_num], target_bit);
 }

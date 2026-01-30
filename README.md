@@ -4,7 +4,7 @@
 
 While many smart feeders focus on App features, my goal here is to master the low-level control. I am writing my own drivers in **C (Bare-Metal)** for the STM32F446RE without using the HAL library. The idea is to make sure the motor control is reliable and deterministic—so the cat gets fed even if the Wi-Fi breaks.
 
-> **Current Status:** Working on Phase 1 (Motor Drivers & Basic Logic).
+> **Current Status:** Working on Phase 2 (Motor Drivers & Basic Logic).
 
 ---
 
@@ -47,7 +47,7 @@ I am manually configuring the microcontroller registers to understand how the ha
 *Goal: Add interaction and reliability.*
 - [x] Implement UART to send "Feed" commands via laptop.
 - [ ] Add a User Button interrupt (PC13) as a manual trigger.
-- [ ] Enable the Watchdog Timer (IWDG) to prevent crashes.
+- [x] Enable the Watchdog Timer (IWDG) to prevent crashes.
 
 ### Phase 3: Future Improvements
 - [ ] Move the logic to a Finite State Machine (FSM).

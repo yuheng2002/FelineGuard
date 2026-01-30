@@ -30,6 +30,11 @@
  */
 #define TIM2_PCLK_EN()  (SET_BIT(RCC->APB1ENR, 0)) // Bitwise Macro defined in stm32f446xx.h
 
+#define TIM3_PCLK_EN()  (SET_BIT(RCC->APB1ENR, 1)) // Bit 1 TIM3EN: TIM3 clock enable
+
+#define TIM6_PCLK_EN()  (SET_BIT(RCC->APB1ENR, 4)) // Bit 4 TIM6EN: TIM6 clock enable
+
+
 /*
  * ==========================================
  * 2. Configuration Structures
@@ -82,4 +87,6 @@ typedef struct{
 void TIM_PWM_Init(TIM_Handle_t *pTIMHandle);
 void TIM_SetCompare1(TIM_RegDef_t *pTIMx, uint32_t CaptureValue);
 
+void TIM_Basic_Init(TIM_Handle_t *pTIMHandle); // Basic Timer (not targeted at PWM)
+void TIM_IRQInterruptConfig(uint8_t IRQNumber, uint8_t EnableOrDisable);
 #endif /* SOURCES_STM32F446XX_TIMER_DRIVER_H_ */

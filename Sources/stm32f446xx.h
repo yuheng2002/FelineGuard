@@ -80,7 +80,13 @@
 #define TIM2_BASEADDR       (APB1_BASEADDR) // 0x40000000
 // #define TIM3_BASEADDR    (APB1_BASEADDR + 0x0400U) // For future use
 // #define I2C1_BASEADDR    (APB1_BASEADDR + 0x5400U) // For future use
-#define USART2_BASEADDR     (APB1_BASEADDR + 0x4400U) // USART2: 0x40004400
+#define USART2_BASEADDR     (APB1_BASEADDR + 0x4400U) // USART2: 0x4000 4400
+
+#define IWDG_BASEADDR       (APB1_BASEADDR + 0x3000U) // IWDG: 0x4000 3000
+
+#define TIM3_BASEADDR       (APB1_BASEADDR + 0x0400U) // TIM3: 0x4000 0400
+
+#define TIM6_BASEADDR       (APB1_BASEADDR + 0x1000U) // TIM6: 0x4000 1000
 
 /*
  * APB2 Peripherals
@@ -115,28 +121,51 @@ typedef struct{
 							  // AFR[1] is AFRH (Offset 0x24) for pins 8-15
 } GPIO_RegDef_t;
 
-/* RCC Register Def (Important for Timer Driver!) */
+/*
+ * ==========================================
+ * RCC Register Map (Full)
+ * ==========================================
+ * Reference: RM0390 Section 6.3
+ */
 typedef struct{
-	volatile uint32_t CR; // clock control register,           offset: 0x00
-	volatile uint32_t PLLCFGR; // PLL configuration register,  offset: 0x04
-	volatile uint32_t CFGR; // clock configuration register,   offset: 0x08
-	volatile uint32_t CIR; // clock interrupt register,        offset: 0x0C
-	volatile uint32_t AHB1RSTR; // AHB1 reset register,        offset: 0x10
-	volatile uint32_t AHB2RSTR; // AHB2 reset register,        offset: 0x14
-	volatile uint32_t AHB3RSTR; // AHB3 reset register,        offset: 0x18
-	uint32_t Reserved0; //placeholder between 0x18 (24) and 0x20 (32), offset: 0x1C
-	volatile uint32_t APB1RSTR; // APB1 reset register,        offset: 0x20
-	volatile uint32_t APB2RSTR; // APB2 reset register,        offset: 0x24
-	uint32_t Reserved1[2]; // placeholder between 0x24 (36) and 0x30 (48), offset: 0x28 - 0x2C
-	volatile uint32_t AHB1ENR; // AHB1 clock enable register,  offset: 0x30
-							   // GPIO Clock is here
-	volatile uint32_t AHB2ENR; // AHB2 clock enable register,  offset: 0x34
-	volatile uint32_t AHB3ENR; // AHB3 clock enable register,  offset: 0x38
-	uint32_t Reserved3; // placeholder between 0x38 (36) and 0x40 (48), offset: 0x3C
-	volatile uint32_t APB1ENR; // APB1 clock enable register,  offset: 0x40
-							   // TIM2 Clock is here!
-	volatile uint32_t APB2ENR; // APB2 clock enable register,  offset: 0x44
-	// ... there are more registers, but this is enough for now
+	volatile uint32_t CR;            // Clock control register,           Offset: 0x00
+	volatile uint32_t PLLCFGR;       // PLL configuration register,       Offset: 0x04
+	volatile uint32_t CFGR;          // Clock configuration register,     Offset: 0x08
+	volatile uint32_t CIR;           // Clock interrupt register,         Offset: 0x0C
+	volatile uint32_t AHB1RSTR;      // AHB1 peripheral reset register,   Offset: 0x10
+	volatile uint32_t AHB2RSTR;      // AHB2 peripheral reset register,   Offset: 0x14
+	volatile uint32_t AHB3RSTR;      // AHB3 peripheral reset register,   Offset: 0x18
+	uint32_t Reserved0;              // Reserved,                         Offset: 0x1C
+	volatile uint32_t APB1RSTR;      // APB1 peripheral reset register,   Offset: 0x20
+	volatile uint32_t APB2RSTR;      // APB2 peripheral reset register,   Offset: 0x24
+	uint32_t Reserved1[2];           // Reserved,                         Offset: 0x28 - 0x2C
+	volatile uint32_t AHB1ENR;       // AHB1 peripheral clock enable reg, Offset: 0x30 (GPIO)
+	volatile uint32_t AHB2ENR;       // AHB2 peripheral clock enable reg, Offset: 0x34
+	volatile uint32_t AHB3ENR;       // AHB3 peripheral clock enable reg, Offset: 0x38
+	uint32_t Reserved2;              // Reserved,                         Offset: 0x3C
+	volatile uint32_t APB1ENR;       // APB1 peripheral clock enable reg, Offset: 0x40 (TIM2/3, IWDG, UART2)
+	volatile uint32_t APB2ENR;       // APB2 peripheral clock enable reg, Offset: 0x44
+
+	/* --- Continued --- */
+
+	uint32_t Reserved3[2];           // Reserved,                         Offset: 0x48 - 0x4C
+	volatile uint32_t AHB1LPENR;     // AHB1 periph. clock enable in low power mode, Offset: 0x50
+	volatile uint32_t AHB2LPENR;     // AHB2 periph. clock enable in low power mode, Offset: 0x54
+	volatile uint32_t AHB3LPENR;     // AHB3 periph. clock enable in low power mode, Offset: 0x58
+	uint32_t Reserved4;              // Reserved,                         Offset: 0x5C
+	volatile uint32_t APB1LPENR;     // APB1 periph. clock enable in low power mode, Offset: 0x60
+	volatile uint32_t APB2LPENR;     // APB2 periph. clock enable in low power mode, Offset: 0x64
+	uint32_t Reserved5[2];           // Reserved,                         Offset: 0x68 - 0x6C
+	volatile uint32_t BDCR;          // Backup domain control register,   Offset: 0x70
+	volatile uint32_t CSR;           // Clock control & status register,  Offset: 0x74 (WATCHDOG FLAGS ARE HERE!)
+	uint32_t Reserved6[2];           // Reserved,                         Offset: 0x78 - 0x7C
+	volatile uint32_t SSCGR;         // Spread spectrum clock generation, Offset: 0x80
+	volatile uint32_t PLLI2SCFGR;    // PLLI2S configuration register,    Offset: 0x84
+	volatile uint32_t PLLSAICFGR;    // PLLSAI configuration register,    Offset: 0x88 (F446 specific)
+	volatile uint32_t DCKCFGR;       // Dedicated Clock Config Register,  Offset: 0x8C (F446 specific)
+	volatile uint32_t CKGATENR;      // Clock Gating Register,            Offset: 0x90 (F446 specific)
+	volatile uint32_t DCKCFGR2;      // Dedicated Clock Config Reg 2,     Offset: 0x94 (F446 specific)
+
 } RCC_RegDef_t;
 
 /*
@@ -242,6 +271,19 @@ typedef struct{
 
 /*
  * ==========================================
+ * 			IWDG Register Map
+ * ==========================================
+ * 20.4.5 in RM0390 Reference Manual
+ */
+typedef struct{
+	volatile uint32_t KR;   // Key register,       Offset: 0x00
+	volatile uint32_t PR;   // Prescaler register, Offset: 0x04
+	volatile uint32_t RLR;  // Reload register,    Offset: 0x08
+	volatile uint32_t SR;   // Status register,    Offset: 0x0C
+} IWDG_RegDef_t;
+
+/*
+ * ==========================================
  * 4. Peripheral Definitions (Typecasting)
  * ==========================================
  * Creating "Objects" for our peripherals.
@@ -268,13 +310,13 @@ typedef struct{
  * Without ( ), the '->' operator would try to access the member of the
  * raw address value (0x40013C00) before casting, causing a compile error.
  */
-#define RCC     ((RCC_RegDef_t*)RCC_BASEADDR)
-#define EXTI    ((EXTI_RegDef_t*)EXTI_BASEADDR)
-#define SYSCFG  ((SYSCFG_RegDef_t*)SYSCFG_BASEADDR)
-#define NVIC_ISER ((NVIC_ISER_RegDef_t*)NVIC_ISER_BASE_ADDR)
+#define RCC     ( (RCC_RegDef_t*)RCC_BASEADDR )
+#define EXTI    ( (EXTI_RegDef_t*)EXTI_BASEADDR )
+#define SYSCFG  ( (SYSCFG_RegDef_t*)SYSCFG_BASEADDR )
+#define NVIC_ISER ((NVIC_ISER_RegDef_t*)NVIC_ISER_BASE_ADDR )
 
 // Project 2: Timer definition
-#define TIM2    ((TIM_RegDef_t*)TIM2_BASEADDR)
+#define TIM2    ( (TIM_RegDef_t*)TIM2_BASEADDR )
 // We will define TIM_RegDef_t in Timer driver or here later
 
 /*
@@ -283,7 +325,23 @@ typedef struct{
  * ==========================================
  * Reference: RM0390 Reference Manual - USART Register map
  */
-#define USART2  ((USART_RegDef_t*)USART2_BASEADDR)
+#define USART2  ( (USART_RegDef_t*)USART2_BASEADDR )
+
+/*
+ * ==========================================
+ * 			IWDG (System Recovery)
+ * ==========================================
+ */
+#define IWDG   ( (IWDG_RegDef_t*)IWDG_BASEADDR )
+
+/*
+ * ==========================================
+ * 		 TIM6 (Replace Software Deay)
+ * ==========================================
+ */
+#define TIM3   ( (TIM_RegDef_t*)TIM3_BASEADDR )
+
+#define TIM6   ( (TIM_RegDef_t*)TIM6_BASEADDR )
 
 /*
  * ==========================================
@@ -296,5 +354,9 @@ typedef struct{
 #define EXTI15_10_IRQ (40)
 
 #define USART2_IRQ    (38)
+
+#define TIM3_IRQ      (29)
+
+#define TIM6_IRQ      (54) // TIM6 global interrupt, DAC1 and DAC2 underrun error interrupts
 
 #endif /* SOURCES_STM32F446XX_H_ */

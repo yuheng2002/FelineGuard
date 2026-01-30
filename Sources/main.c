@@ -22,6 +22,7 @@
 #include "stm32f446xx_gpio_driver.h"
 #include "stm32f446xx_timer_driver.h"
 #include "stm32f446xx_uart_driver.h"
+#include "stm32f446xx_watchdog_driver.h"
 
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
@@ -30,6 +31,7 @@
 /* --- Global Variables --- */
 USART_Handle_t USART2_Handle; // declared here to reuse in USART_SendData in main() function
 uint8_t message = 0; // data collected from USART2 data register
+uint8_t FEED_COMPLETE = 0; // "Feed Complete" message flag
 
 void software_delay(uint32_t count){
     for(uint32_t i = 0; i < count; i++){
@@ -182,6 +184,80 @@ void Setup_Peripherals(void){ // void as parameter emphasizes that this function
 	 * ==============================
 	 */
 	USART_IRQInterruptConfig(USART2_IRQ , ENABLE);
+
+	/*
+	 * ==============================
+	 * 	  PA5 (LED2) Configuration
+	 * ==============================
+	 * use this to indicate motor spinning
+	 */
+	GPIO_Handle_t PA5_LED;
+	PA5_LED.pGPIOx = GPIOA;
+
+	PA5_LED.GPIO_PinConfig.GPIO_PinNumber = 5;
+	PA5_LED.GPIO_PinConfig.GPIO_PinMode = GPIO_MODE_OUT;
+	PA5_LED.GPIO_PinConfig.GPIO_PinOPType = GPIO_OP_TYPE_PP;
+	PA5_LED.GPIO_PinConfig.GPIO_PinPuPdControl = GPIO_PIN_PU;
+	PA5_LED.GPIO_PinConfig.GPIO_PinSpeed = GPIO_SPEED_MEDIUM;
+
+	GPIO_Init(&PA5_LED);
+
+	/*
+	 * ==============================
+	 * 	  IWDG Configuration
+	 * ==============================
+	 * Purpose: Ensure system stability by resetting MCU if software hangs.
+	 *
+	 * CALCULATION:
+	 * The IWDG is clocked by the LSI (Low-Speed Internal) oscillator @ 32 kHz.
+	 * With a Prescaler of 32 (IWDG_PR = 3), the counter clock frequency becomes:
+	 * f_counter = 32 kHz / 32 = 1 kHz (1000 ticks per second).
+	 *
+	 * Therefore, the "Tick Resolution" (Time per Count) is:
+	 * T_tick = 1 / 1000 Hz = 1 ms.
+	 *
+	 * To achieve a 1-second timeout:
+	 * Reload Value = Target Time / T_tick
+	 * = 1000 ms / 1 ms = 1000.
+	 */
+	IWDG_Config_t myDog;
+	myDog.IWDG_Prescaler = IWDG_PRESCALER_32;
+	myDog.IWDG_Counter = 1000;
+
+	IWDG_Init(&myDog);
+
+	/*
+	 * ========================================
+	 * 		    TIM6 Configuration
+	 * ========================================
+	 * NOTE:
+	 * I chose TIM 6 because it is a "Basic Timer" (Unlike TIM2/3 -> General Purpose Timers)
+	 * It is designed to do simple timing
+	 *
+	 * This timer is to replace the software delay I used to control the duration of motor spin
+	 * It offers two major benefits:
+	 * 1) Hardware timer is much more precise than software delay
+	 * 2) With Interrupt, the timer itself will no longer be blocking the CPU
+	 */
+
+	TIM6_PCLK_EN(); // Enable Clock
+	TIM_Handle_t TIMER6;
+	TIMER6.pTIMx = TIM6;
+
+	// Math:
+	// Timer Clock = 16,000,000 Hz
+	// Timer Target Tick Speed = 1 kHz (1ms)
+	// Timer Prescaler = (16,000,000 / 1,000) - 1 = 15999
+	TIMER6.TIM_Config.Prescaler = 15999;
+
+	// Target Duration = 2000 ms
+	// Period (ARR) = 2000 - 1 = 1999
+	TIMER6.TIM_Config.Period = 1999;
+
+	TIM_Basic_Init(&TIMER6);
+
+	TIM_IRQInterruptConfig(TIM6_IRQ, ENABLE); // the IRQInterruptConfig logic is universal
+											  // will refractor later to avoid wasteful copying
 }
 
 /*
@@ -226,27 +302,135 @@ void USART2_IRQHandler(void){
 	// USART2->DR = 0;
 }
 
+void TIM6_DAC_IRQHandler(void){
+	/*
+	 * ==============================
+	 * 1. Check if the Update Interrupt Flag (UIF) is set (Bit 0 in SR)
+	 *  ==============================
+	 * Status Register:
+	 * Bit 0 UIF: Update interrupt flag
+	 * [0: No update occurred.]
+	 *
+	 * [1: Update interrupt pending. This bit is set by hardware when the registers are updated:
+	 * – At overflow or underflow and if UDIS = 0 in the TIMx_CR1 register.
+	 * – When CNT is reinitialized by software using the UG bit in the TIMx_EGR register,
+	 * if URS = 0 and UDIS = 0 in the TIMx_CR1 register.
+	*/
+	if ( READ_BIT(TIM6->SR, 0)){
+		TIM_SetCompare1(TIM2, 0); // CCR1 = 0 -> "Turn Off" the motor
+		GPIO_WriteToOutputPin(GPIOA, 5, 0); // LED2 goes Off
+	}
+
+	// --- Finishing Up ---
+
+	// A. Turn off TIM 6
+	// otherwise it will auto-reload, and interrupt the CPU every 2 seconds
+	CLEAR_BIT(TIM6->CR1, 0);
+
+	// B. Reset Flag Bit
+	// If we do not clear the flag,
+	// CPU still thinks this interrupt task is "not done", leading to a deadloop
+	CLEAR_BIT(TIM6->SR, 0); // FIXED BUG
+
+	// C. Serial Print the "Feed Complete" message
+	// However, it is principal to keep ISR simple and short
+	// so I only use a flag here to indicate action
+	FEED_COMPLETE = 1;
+}
+
 int main(void)
 {
 	Setup_Peripherals(); // set up hardware
 
 	GPIO_WriteToOutputPin(GPIOA, 1, DISABLE);
 
-	char boot_msg[] = "STM32 Power ON\r\n";
+	/*
+	 * How am I supposed to tell whether the dog was NOT fed?
+	 *
+	 * Normally, I would print something for testing purposes
+	 * But if the dog is not fed, it means that the system crashed
+	 * which means at that moment, it cannot send any data through USART
+	 *
+	 * Solution:
+	 * [RCC clock control & status register] in { 6.3.21 RM0390 Manual }
+	 * Bit 29 IWDGRSTF: Independent watchdog reset flag
+	 *
+	 * [autopsy report]
+	 * Hardware sets this bit to 1 once IWDG reset occurred
+	 * All we need to do is to "check" it every time before we feed the dog
+	 *
+	 * NOTE: the CPU will need to check this register constantly
+	 * BUT it will NOT block the CPU, because it runs as many times as the Feed function call
+	 */
+	if ( READ_BIT( RCC->CSR, 29 )){
+		char IWDG_AutopsyReport[] = "\r\n!!! Watchdog starved to death. Reboot!\r\n";
+		USART_SendData(&USART2_Handle, (uint8_t*)IWDG_AutopsyReport, strlen(IWDG_AutopsyReport));
+		/*
+		 * ==============================
+		 * Reset flags to prevent false alert after next reset
+		 * ==============================
+		 *
+		 * NOTE:
+		 * Manually setting IWDGRSTF has NO effect
+		 * CLEAR_BIT(RCC->CSR, 29) will NOT work
+		 *
+		 * MUST USE:
+		 * Bit 24 RMVF: Remove reset flag
+		 * This bit is set by software to clear the reset flags.
+		 * 0: No effect
+		 * 1: Clear the reset flags
+		 */
+		SET_BIT( RCC->CSR, 24 );
+	}
+
+	char boot_msg[] = "STM32 System Initialized.\r\n";
 	USART_SendData(&USART2_Handle, (uint8_t*)boot_msg, strlen(boot_msg));
 
 	while (1){
+		// ---------------------------------------------------------
+		// 1. Watchdog Feeding
+		// ---------------------------------------------------------
+		// We MUST feed the dog in the main loop constantly.
+		// If we used "software_delay" (Blocking), the CPU would get stuck
+		// and fail to reach this line, causing the IWDG to reset the MCU.
+		IWDG_FEED();
+
+		// ---------------------------------------------------------
+		// 2. Command Processing
+		// ---------------------------------------------------------
 		if (message == 'F'){
-			// 1. Execute Action
-			TIM_SetCompare1(TIM2, 2000);
-			software_delay(2000000);
-			TIM_SetCompare1(TIM2, 0);
+			/*
+			 * Check if TIM6 is currently running (CR1 Register, Bit 0 CEN).
+			 * Logic:
+			 * READ_BIT returns 1 (True) if the timer is counting (Motor is spinning).
+			 * We use '!' (NOT) to ensure we only start IF the timer is STOPPED.
+			 * * Purpose:
+			 * Prevents the user from spamming 'F' and resetting the timer repeatedly,
+			 * which would cause UART message overflow or glitchy motor behavior.
+			 */
+			if ( ! READ_BIT(TIM6->CR1, 0) ){
+				// A. Turn ON Hardware
+				GPIO_WriteToOutputPin(GPIOA, 5, 1); // Turn LED ON
+				TIM_SetCompare1(TIM2, 2000); // Set PWM to start Motor
 
-			// 2. Respond to PC
-			char done_msg[] = "Feed Complete.\r\n";
-			USART_SendData(&USART2_Handle, (uint8_t*)done_msg, strlen(done_msg));
+				// [REMOVED] software_delay(2000000); // OLD: Blocking delay
+				// [REMOVED] TIM_SetCompare1(TIM2, 0);
 
-			// 3. [CRITICAL]: Reset the flag/buffer
+				// B. Start TIM6 (Asynchronous / Non-Blocking Delay)
+				// This acts as a "Background Alarm".
+				// The CPU sets it and immediately moves on.
+				TIM6->CNT = 0; // Reset counter to ensure full 2s duration
+
+				SET_BIT(TIM6->CR1, 0); // Enable Counter (Start Timer)
+
+				// C. Acknowledge Command
+				// Tell PC that the action has STARTED.
+				char start_msg[] = "Feeding started...\r\n";
+				USART_SendData(&USART2_Handle, (uint8_t*)start_msg, strlen(start_msg));
+			}
+			// D. Clear Buffer
+			// Whether we started the motor or ignored the command,
+			// we must clear 'message' to prevent infinite looping.
 			// otherwise the loop will execute this block forever!
 			message = 0;
 		}
@@ -257,9 +441,28 @@ int main(void)
 			// Reset here too!
 			message = 0;
 		}
-		else {
-			// do nothing, motor stays off
-			TIM_SetCompare1(TIM2, 0);
+		// ---------------------------------------------------------
+		// 3. Asynchronous Event Handling
+		// ---------------------------------------------------------
+		// FEED_COMPLETE is set to 1 by the TIM6 Interrupt Service Routine (ISR)
+		// when the 2 seconds have passed.
+		// The CPU checks this flag every loop iteration.
+		if (FEED_COMPLETE == 1) {
+		        char done_msg[] = "Feed Complete.\r\n";
+		        USART_SendData(&USART2_Handle, (uint8_t*)done_msg, strlen(done_msg));
+
+		        // Reset flag to wait for the next event
+		        FEED_COMPLETE = 0;
 		}
+
+		/*
+		 * [WARNING]
+		 * There used to an "else" block here to turn off the motor if the user
+		 * inputs "invalid commands".
+		 * BUT, since I added TIM6 ISR in the latest version,
+		 * keep that else block here will force the motor OFF immediately
+		 * whenver 'message' is 0 (which is 99% of the time).
+		 * The job of turning off the motor is fully intergrated to the TIM6 ISR logic
+		 */
 	}
 }

@@ -1,5 +1,73 @@
 # FelineGuard Engineering Log
 
+Here is the polished version. I have kept your personal tone, your reasoning process, and your specific examples (like the cat feeder reliability). I also clarified the logic regarding *why* the ISR triggers when it does, to fix the confusion you mentioned in point #3.
+
+---
+
+# 2026-01-29: IWDG Implementation & Hardware Timer to replace Software Delay
+
+### Why I did this
+
+I wanted to ensure the system can reboot itself in case of a software failure. This is critical for safeguarding my cat. If I am gone for a few days, I trust my feeder to take care of her, but if it fails due to a power outage, I can’t blame the code. However, if it fails due to a system crash caused by bad programming, that is unacceptable.
+
+### 1. Independent Watchdog (IWDG) Complexity
+
+I learned that although the IWDG has fewer registers than most peripherals, its protocol is quite specific. You have to configure the **Key Register (KR)**, **Prescaler (PR)**, and **Reload Register (RLR)**.
+
+* **The Locking Mechanism:** The KR is "locked" by default. I first need to write `0x5555` (the access code) to it. Only then can I write to the PR and RLR to configure the timing.
+* **The "Feeding" Logic:** The core mechanism is essentially a down-counter. Once I set the counter, I must regularly write a reload value to the KR to "feed" the dog. If I don't feed it in time, the counter hits zero and hard-resets the entire system.
+* **Independent Clock:** Unlike other peripherals, the RCC (Reset and Clock Control) does not enable the IWDG's clock. It runs on its own internal 32MHz clock (LSI). This makes perfect sense: you wouldn't want the safety system that reboots your MCU to rely on the same clocks that might have caused the crash in the first place.
+* **Activation:** As long as the MCU is powered, writing the access keys activates the IWDG. The final step is to "start the engine" by writing `0xCCCC` to the KR.
+
+**How do I know if the dog bit me?**
+If the system crashes and the IWDG reboots the board, I can't exactly serial print a "System Crashing..." message *during* the crash. The solution lies in the **RCC Control & Status Register (CSR)**. Even though the system resets, the hardware flags the *source* of the reset in this register. So, inside my setup function (which runs immediately after a reboot), I check this "mailbox." If the IWDG flag is set, I know a watchdog reset occurred.
+
+**The Math:**
+`IWDG_Frequency = 32kHz / Prescaler` (assuming LSI is 32kHz, typically, not 32MHz, but the logic holds).
+If I set the Prescaler to 32, I get a 1kHz frequency (1 tick/ms). To get a 1-second timeout, I set the Reload Register (RLR) to 1000. This ensures the watchdog checks the system every second.
+
+### 2. The Problem with Software Delay
+
+Previously, I used a `software_delay(2000000)` loop to keep the motor running for a fixed time. This created two major problems:
+
+1. **Blocking:** It stops the CPU from doing anything else during that interval. The timing is also imprecise; it might take the CPU a different amount of time to run the loop depending on interrupts or optimizations. This might not matter for a cat feeder, but for a car or a rocket, precise timing is crucial.
+2. **Starving the Watchdog:** Because the delay blocks the CPU for ~2 seconds, the code cannot return to the top of the `while(1)` loop to feed the dog. The IWDG times out (1s limit), resets the system, and this repeats infinitely, causing a crash loop.
+
+### 3. The Solution: Hardware Timer + ISR
+
+I decided to replace the software delay with a hardware timer. However, simply *polling* a hardware timer is still blocking logic—the CPU would still have to sit there waiting for the flag to change. I needed a non-blocking approach: **Hardware Timer + Interrupt Service Routine (ISR).**
+
+**Choosing the Timer:**
+I had been using TIM2 (General Purpose) for PWM, but I discovered simpler "Basic Timers" (TIM6 & TIM7). Their register maps are much smaller, but ST Microelectronics designed them with the same offsets for common registers (like PSC and ARR) as the advanced timers. This meant I could reuse my existing `TIM_RegDef_t` struct, though I should probably refactor this later for safety.
+
+**The "Vector Table" & Naming Convention:**
+I ran into a tricky issue with the ISR function name. I learned that in the startup assembly file (`.s`), there is a pre-defined **Vector Table** containing the addresses of all interrupt handlers. The names are strict acronyms.
+
+* I initially tried naming my function `TIM6_IRQHandler` or random names, but the code wouldn't jump to it.
+* I checked the vector table and found the specific name required is `TIM6_DAC_IRQHandler`.
+
+**The "Wrong Timer" Bug:**
+I also had a funny bug where I copy-pasted code from my attempts with TIM3. Inside the `TIM6_DAC_IRQHandler`, I wrote `CLEAR_BIT(TIM3->SR, 0)`.
+Because I wasn't clearing the *correct* status register (TIM6->SR), the CPU thought the interrupt was still pending. The moment it exited the ISR, it jumped right back in, creating an infinite loop.
+
+### 4. The Logic Flow (Event-Driven)
+
+Transitioning to event-driven programming was logically tedious to figure out, but here is the final workflow:
+
+1. **The Trigger:** In the main loop, when the STM32 receives the byte 'F', it turns on the Motor and LED2. Immediately after, it enables TIM6 (by setting the CEN bit in CR1).
+2. **The Background Task:** We enabled the Update Interrupt (DIER) during setup. Once we set CEN (Counter Enable), TIM6 starts counting from 0 up to the ARR value (2 seconds worth of ticks). The CPU is now free to go back to the main loop to feed the watchdog and listen for other commands.
+3. **The Event:** When TIM6 reaches the ARR value, the hardware sets the **Update Interrupt Flag (UIF)** in the Status Register (SR) to 1.
+4. **The ISR:** The hardware sees the flag and jumps to `TIM6_DAC_IRQHandler`.
+* **Logic Check:** It sees the update event occurred (so 2 seconds have passed).
+* **Action:** It turns OFF the Motor and LED.
+* **Cleanup:** It clears the SR flag (to prevent the loop bug mentioned above) and disables TIM6 (clears CEN). We disable the timer so it doesn't keep reloading and triggering interrupts every 2 seconds forever.
+
+
+
+### Conclusion
+
+Figuring out this logic was complicated, but I learned a lot about how the hardware coordinates events. I still have one minor bug: after rebooting the board, the *very first* 'F' command prints "Feed Complete" immediately (likely a flag not being cleared during initialization). But aside from that, it works perfectly. I'll save that debugging for another day.
+
 # 2026-01-29: USART2 Interrupt Enabled & Python Script Optimization
 
 Following the successful setup of USART2 as both transmitter and receiver for testing (I plan to connect this STM32 board to my ESP32 later for IoT features), I have now enabled the interrupt for USART2 by setting the corresponding bit in the NVIC -> ISER (Interrupt Set-Enable Register).

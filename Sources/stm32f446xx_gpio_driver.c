@@ -419,13 +419,17 @@ uint16_t GPIO_ReadFromInputPort(GPIO_RegDef_t *pGPIOx){
 }
 
 /*
- * Writing to Output Pin: sets a specific pin to 0 or 1
+ * Writing to Output Pin: sets a specific pin to 1
  * * [UPDATED Implementation using BSRR]
  * Instead of Read-Modify-Write using ODR (which is not interrupt-safe),
  * we use the BSRR (Bit Set/Reset Register) for atomic operations.
  * * BSRR Logic:
  * - Writing '1' to bits 0-15 sets the corresponding pin (BSy).
  * - Writing '1' to bits 16-31 resets the corresponding pin (BRy).
+ *
+ * NOTE:
+ * writing 0 to any bit in the STM32 BSRR (Bit Set/Reset Register)
+ * has NO effect on the corresponding GPIO output pin
  */
 void GPIO_WriteToOutputPin(GPIO_RegDef_t *pGPIOx, uint8_t PinNumber, uint8_t Value){
     if (Value == GPIO_PIN_SET)
