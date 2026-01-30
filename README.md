@@ -41,7 +41,7 @@ I am manually configuring the microcontroller registers to understand how the ha
 - [x] Hardware wiring (STM32 -> A4988 -> Motor).
 - [x] Write GPIO driver to control the A4988 Direction pin.
 - [x] Configure TIM2 to generate PWM pulses for the Step pin.
-- [ ] Verification: Check the PWM frequency with a Logic Analyzer.
+- [x] Verification: Check the PWM frequency with a Logic Analyzer.
 
 ### Phase 2: Control & Safety (This Week)
 *Goal: Add interaction and reliability.*
