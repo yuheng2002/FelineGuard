@@ -56,13 +56,34 @@ Transitioning to event-driven programming was logically tedious to figure out, b
 
 1. **The Trigger:** In the main loop, when the STM32 receives the byte 'F', it turns on the Motor and LED2. Immediately after, it enables TIM6 (by setting the CEN bit in CR1).
 2. **The Background Task:** We enabled the Update Interrupt (DIER) during setup. Once we set CEN (Counter Enable), TIM6 starts counting from 0 up to the ARR value (2 seconds worth of ticks). The CPU is now free to go back to the main loop to feed the watchdog and listen for other commands.
-3. **The Event:** When TIM6 reaches the ARR value, the hardware sets the **Update Interrupt Flag (UIF)** in the Status Register (SR) to 1.
-4. **The ISR:** The hardware sees the flag and jumps to `TIM6_DAC_IRQHandler`.
-* **Logic Check:** It sees the update event occurred (so 2 seconds have passed).
+3. **The Event (Overflow):** This was a major misconception I had to clear up. Initially, I thought the interrupt signal was sent the moment the CPU enabled the counter. But the truth is, the hardware only sends the interrupt request **AFTER** it counts from 0 to 1999 (the ARR value). This causes an **Overflow**, which automatically sets the **Update Interrupt Flag (UIF)** in the Status Register (SR) to 1.
+* *Reference:* The RM0390 manual actually states this clearly for TIMx_SR: *"This bit is set by hardware... At overflow or underflow."* I just didn't realize earlier that "overflow" basically means "finished counting to the target."
+
+
+4. **The ISR:** The hardware sees the SR flag is 1 and jumps to `TIM6_DAC_IRQHandler`.
+* **Logic Check:** It confirms the update event occurred (meaning 2 seconds have passed).
 * **Action:** It turns OFF the Motor and LED.
-* **Cleanup:** It clears the SR flag (to prevent the loop bug mentioned above) and disables TIM6 (clears CEN). We disable the timer so it doesn't keep reloading and triggering interrupts every 2 seconds forever.
+* **Cleanup:** It clears the SR flag (to prevent the infinite loop bug) and disables TIM6 (clears CEN). We disable the timer so it doesn't keep reloading and triggering interrupts every 2 seconds forever.
 
 
+### Reflections on Concurrency & Asynchronous Logic
+
+Although I haven't officially taken an Operating Systems course (like CSE 120 at UCSD) yet, this project forced me to understand **Concurrency** and **Event-Driven Programming**.
+
+**Synchronous vs. Asynchronous:**
+My original thinking was still stuck in "Synchronous" mode. I imagined that even with the timer, the feeding process happened inside one single iteration of the `while` loop.
+
+* **Blocking (Synchronous):** If I used the old `software_delay`, the CPU would start the motor at Iteration #0, sit there for 2 seconds doing nothing, and finish at Iteration #0. But during that time, the watchdog would be screaming and eventually crash the system because it wasn't being fed.
+* **Non-Blocking (Asynchronous):** With the interrupt timer, the CPU starts TIM6 at Iteration #0 and immediately moves on. TIM6 plays "solo" in the background—it doesn't talk to the CPU, and the CPU doesn't care what TIM6 is doing.
+
+**The "Millions of Iterations" Realization:**
+This is the cool part: While TIM6 is slowly counting to 2000 in the background, the CPU is running at lightning speed. By the time TIM6 finally raises its hand and says "Yo, I finished counting," the CPU hasn't just moved to Iteration #1... it's probably on **Iteration #5,000,000**.
+
+* In *every single one* of those 5 million iterations, the CPU fed the watchdog.
+* The dog doesn't care *when* it is fed (at tick 1 or tick 998); it only gets mad if it is *not* fed within its limit.
+* So, the dog isn't fed "once per feeding cycle"; it is fed millions of times while the motor is spinning.
+
+This asynchronous approach allows a single thread to *seem* like it's doing multiple things at once because it never "waits and does nothing." The hardware handles the waiting, and the CPU just wraps things up when notified. It's fascinating to imagine applying this mentality to modern CPUs with dozens of threads running at extreme speeds.
 
 ### Conclusion
 
