@@ -1,7 +1,5 @@
 # FelineGuard Engineering Log
 
-Here is the polished version. I have kept your personal tone, your reasoning process, and your specific examples (like the cat feeder reliability). I also clarified the logic regarding *why* the ISR triggers when it does, to fix the confusion you mentioned in point #3.
-
 ---
 
 # 2026-01-29: IWDG Implementation & Hardware Timer to replace Software Delay
