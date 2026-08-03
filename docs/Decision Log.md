@@ -190,3 +190,18 @@ A single supply, 12V in with logic derived through a regulator, would remove the
 ordering question entirely. It was not adopted because development runs on USB
 power and uses the ST-LINK for flashing, which brings back a second supply and
 needs board jumper changes to avoid back-feeding.
+
+## Implementation
+
+### No GPIO driver
+The plan was a GPIO_CTRL module wrapping init, read and write. The HAL already
+provides all of that, so wrapping it would be an indirection with nothing in it.
+
+What is left is board knowledge: which pin each signal is on. That lives in
+`board.h`, a header of macros with no `.c` file. Each driver configures its own
+pins from those macros, so the pin map has one home and every module still
+carries the setup it needs.
+
+### Executive may call the HAL directly for system bring-up
+The Executive calls the HAL directly, but only for system bring-up: 
+anything that drives the feeder goes through the application layer.
