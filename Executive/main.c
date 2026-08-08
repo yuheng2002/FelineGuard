@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "stm32f4xx_hal.h"
 #include "board.h"
+#include "UART_CTRL.h"
 
 void SysTick_Handler(void)
 {
@@ -9,9 +10,7 @@ void SysTick_Handler(void)
 
 void blocking_delay(void){
 	volatile uint32_t i;
-	for (i = 0; i < 500000; i++){
-
-	}
+	for (i = 0; i < 500000; i++){ }
 }
 
 int main(void)
@@ -31,11 +30,18 @@ int main(void)
 
 	HAL_GPIO_Init(LD2_PORT, &LD2_Config);
 
+	UART_CTRL_Init();
+
+	uint8_t b;
 
 	while (1){
-		HAL_GPIO_WritePin(LD2_PORT, LD2_PIN, GPIO_PIN_SET);
-		blocking_delay();
-		HAL_GPIO_WritePin(LD2_PORT, LD2_PIN, GPIO_PIN_RESET);
-		blocking_delay();
+		/* Stage 2: verify the UART_CTRL driver */
+		if (UART_CTRL_ReadByte(&b) && b == 0x31){ /* utf8 encoding "1" = 0x31 */
+			UART_CTRL_Write(&b, 1);
+			HAL_GPIO_WritePin(LD2_PORT, LD2_PIN, GPIO_PIN_SET);
+			blocking_delay();
+			HAL_GPIO_WritePin(LD2_PORT, LD2_PIN, GPIO_PIN_RESET);
+			blocking_delay();
+		}
 	}
 }
