@@ -205,3 +205,10 @@ carries the setup it needs.
 ### Executive may call the HAL directly for system bring-up
 The Executive calls the HAL directly, but only for system bring-up: 
 anything that drives the feeder goes through the application layer.
+
+### Use a ring buffer between UART_CTRL and Comms
+Unlike I2C, which has START/STOP conditions to delimit one complete transaction, UART delivers a byte stream with no frame boundaries, so the boundary has to be defined by the protocol -- this one uses `\n` to end a command. UART_CTRL takes in raw bytes, and Comms polls them and assembles them into a command line.
+
+The two run at different rates: UART_CTRL is interrupt-driven, Comms is polled in the main loop. If the host sends two commands back to back, say a `FEED` followed by a `PING`, the bytes of the second one arrive while the first is still being processed and have nowhere to go.
+
+Requiring the host to wait between commands would work, but it puts correctness in the hands of the other end. A ring buffer decouples the two rates instead and depends on nothing outside the device. It is also a chance to implement one properly.
