@@ -32,6 +32,25 @@ The final value is 4. But since one byte was consumed and one was produced, they
 
 The `k+1` approach allocates `k+1` physical elements while only allowing `k` of them to hold data, which gives `(rear + 1) % (capacity + 1) == front` as the Full condition. Since `rear` always points to the next available index, if `rear + 1` wraps back to `front`, it means `rear` is sitting on that extra slot, so the buffer is full.
 
+#### What happens if the consumer or producer reads an outdated value
+
+This is the standard way to implement a ring buffer, and it is also the one that feels most natural. But it is worth writing down a property that falls out of it.
+
+Removing the `size` variable removes the race condition that comes from one variable being written by both the ISR and the main loop. That race would otherwise need a critical section (disabling interrupts) or an atomic read-modify-write; designing it away is the cheaper fix.
+
+Timing effects do not disappear entirely, though. Either side can still read a value the other side is about to change:
+
+**Consumer reads a stale `rear`.** Say the buffer is empty, so `front == rear`.
+The main loop reads both, sees them equal and takes nothing. An ISR then fires and stores a byte. The main loop picks it up on the next pass a few microseconds later. Nothing is lost.
+
+**Producer reads a stale `front`.** Say the buffer is full. The main loop reads the byte at `front` but is interrupted before it updates `front`. The ISR sees the old value, concludes the buffer is still full, and drops the incoming byte. One byte is lost, but nothing already stored is overwritten.
+
+In both cases the stale read makes that side *underestimate* what it can do: the consumer thinks there is less data than there is, the producer thinks there is less room than there is. The worst outcome is doing one less thing, never doing the wrong thing. That is a consequence of each index having exactly one writer, not something the code checks for.
+
+The second case is also unlikely in practice. The buffer can hold more bytes than the longest supported command, and filling it would require the main loop to stall for far longer than it takes a byte to arrive at 115200 baud.
+
+And if a byte were dropped, the layering absorbs it: Comms still assembles a line at the next `\n`, but the line is incomplete, so CmdProc matches it against no command and answers `"Invalid command"`. The stream resynchronises at the following `\n`. The firmware protects itself rather than relying on the host discipline.
+
 #### Every peripheral needs its own clock
 
 I remembered to enable the clock for GPIOA with `__HAL_RCC_GPIOA_CLK_ENABLE()`, but I forgot `__HAL_RCC_USART2_CLK_ENABLE()`. Without that line the whole USART2 peripheral is dead -- same lesson as the GPIO one from 08-02, just one level up: the pins were configured but the peripheral driving them was not clocked.
@@ -74,3 +93,57 @@ void USART2_IRQHandler(void){
 Now the ISR is stuck: `RXNE` is low, so the condition is false, so `DR` is never read, so `ORE` is never cleared -- and since `RXNEIE` raises an interrupt on either flag, the ISR is re-entered immediately, forever. The main loop never gets to run. This is an interrupt storm, not something the hardware can get out of on its own.
 
 The fix is to read `DR` when either `RXNE` or `ORE` is high, since the action is the same for both: the former means there is data, the latter needs clearing. After that, if `RXNE` was the one set, the byte is valid and goes into the receive buffer; otherwise it is dropped.
+
+### 2026-08-07 -- TIMER
+
+#### Renaming TIM_CTRL to TIMER
+
+I originally wanted TIM_CTRL to be one universal driver for the TIM peripheral on top of the HAL. That does not hold up, because "TIM" is not one thing. This chip has advanced-control timers (TIM1, TIM8), general-purpose timers (TIM2 to TIM5) and basic timers (TIM6, TIM7), and this project uses two of them for completely different jobs.
+
+One generates the PWM that drives the motor STEP pin. That output goes out on a GPIO, so it needs a pin configured, and the waveform is really part of the A4988 interface -- so TIM2 belongs to `MOTOR_CTRL`.
+
+The other just counts a requested amount of time and never leaves the chip. Basic timers have no output channels and no pins at all, which is exactly what that job needs. So this module keeps TIM6 and is named for what it provides rather than for the peripheral it happens to use.
+
+#### The general shape of enabling an interrupt
+
+Yesterday's UART work already had all the pieces; writing TIM6 made the pattern obvious.
+
+There are three separate things involved:
+
+- **The flag** -- set by hardware when the event happens. `RXNE` for UART goes high when a byte moves from the shift register into the data register. It is the hardware saying "a byte just arrived", and it is set no matter if anyone is listening.
+- **The interrupt enable** -- `RXNEIE` for UART, `UIE` for TIM. This decides whether setting the flag also raises an interrupt request. Without it the flag still works; nobody knows about it.
+- **The NVIC** -- the gate between the peripheral's interrupt request and the CPU. Without enabling it the request never reaches the core.
+
+So enabling an interrupt on any peripheral is the same three steps:
+
+```c
+HAL_UART_Init(&USART2_Handle);
+__HAL_UART_ENABLE_IT(&USART2_Handle, UART_IT_RXNE);   /* RXNEIE */
+HAL_NVIC_SetPriority(USART2_IRQn, 5, 0);
+HAL_NVIC_EnableIRQ(USART2_IRQn);
+```
+
+```c
+HAL_TIM_Base_Init(&TIM6_Handle);
+__HAL_TIM_ENABLE_IT(&TIM6_Handle, TIM_IT_UPDATE);     /* UIE */
+HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 6, 0);
+HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
+```
+
+The enable bit and the NVIC are set once at init. The flag is the part that has to be dealt with at run time, on every interrupt.
+
+**How the flag gets cleared differs between peripherals.** For UART, reading the data register clears `RXNE` as a side effect, so handling the byte and clearing the flag are the same action. TIM has no such side effect: `UIF` must be cleared explicitly at the top of `TIM6_DAC_IRQHandler`. Forgetting it means the flag is still set when the handler returns, the interrupt fires again immediately, and the main loop never runs again -- the same failure mode as leaving `ORE` set.
+
+##### Timer equation
+
+    update frequency = f_tim / ((PSC + 1) * (ARR + 1))
+
+`PSC + 1` because dividing a clock by zero makes no sense, so the register value N means "divide by N + 1" and 0 means "no division". `ARR + 1` because the counter is zero-based: it counts 0, 1, ... ARR, which is ARR + 1 ticks.
+
+TIM6 has a 16-bit ARR, so it holds at most 65535. A higher ARR gives better resolution, but resolution only matters for PWM duty cycle, and 1% scale (from 1 to 100%) is usually enough. For a plain counter it buys nothing.
+
+So the approach is to find a factor pair that divides evenly and reads well. I picked PSC = 15 and ARR = 999:
+
+    16 MHz / (16 * 1000) = 1000 Hz  ->  1 ms per tick
+
+1 ms is the unit this module exposes, so the application can ask for any duration it wants: a 5-second feed is just `TIMER_StartTimeout(5000)`.
