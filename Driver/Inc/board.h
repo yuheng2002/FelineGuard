@@ -24,5 +24,4 @@
 #define USER_BUTTON_PORT    GPIOC
 #define USER_BUTTON_PIN     GPIO_PIN_13
 
-
 #endif /* INC_BOARD_H_ */
