@@ -170,3 +170,47 @@ The Pololu page warns that "the STEP and DIR pins are not pulled to any particul
 "Please note that the RST pin is floating; if you are not using the pin, you can connect it to the adjacent SLP pin on the PCB to bring it high and enable the board." RST and SLP are shorted with a jumper.
 
 "Connecting or disconnecting a stepper motor while the driver is powered can destroy the driver." The reason is that motor coils are inductors and their current cannot change instantaneously: breaking the circuit while current is flowing produces a large `V = L * di/dt` spike that can punch through the driver's output stage. So: wire everything first, then power up; power down before touching any wire.
+
+### 2026-08-10 -- Motor bring-up
+
+Continuing from yesterday: the PWM was verified at 250 Hz, so today was about actually driving the motor.
+
+#### The multimeter only measures resistance when the circuit is off
+
+I keep forgetting this. Before connecting the 12 V supply I wanted to confirm that VMOT was not shorted to VDD, and the continuity buzzer went off, which got me worried for a moment. But continuity and resistance modes work by pushing a small current through the circuit and measuring the drop -- with the MCU powered, that measurement is meaningless. With everything unpowered the same two points read over 10 kΩ, which is the internal path through the chip and perfectly normal.
+
+This rule goes at the top of the wiring checklist: **unplug everything before any resistance or continuity measurement.**
+
+#### Setting V_ref
+
+The A4988 does not put the motor supply straight across the coils. The motor is rated 2 A per coil at a few volts, so 12 V applied directly would push several amps and destroy both the motor and the driver. Instead the driver chops: it watches the current through a sense resistor and switches off once the limit is reached. `V_ref` is the knob that sets that limit.
+
+    I_max = V_ref / (8 * R_cs)
+
+`R_cs` on my board is marked **R100**, i.e. 0.1 Ω. Pololu states that all units they have made since 2017 use 0.068 Ω sense resistors (0.050 Ω before that), so neither value matches -- mine is a HiLetgo StepStick clone, and the marking on the board is what counts.
+
+![A4988 top view (screenshot taken from Amazon purchase history)](<A4988 top view.jpg>)
+
+The motor is rated 2 A per coil (STEPPERONLINE NEMA 17, 59 Ncm). The A4988 can reach 2 A, but only with a heat sink *and* forced air; I only have the heat sink, so I set the limit conservatively:
+
+    V_ref = 8 * 1.0 A * 0.1 Ω = 0.8 V
+
+It measured 0.41 V out of the box, which works out to 0.36 A per coil, so this is double what the default build was running at.
+
+Note that running below the motor's rating costs torque: if the auger meets more resistance than the motor can overcome, it skips steps and the firmware has no way to notice. The definition of one serving -- 5 seconds at 250 Hz in full-step mode, so 6.25 revolutions -- assumes no steps are lost.
+
+#### Rewiring the supplies
+
+Previously the 12 V supply went to a rail on the breadboard and from there to VMOT and GND, while VDD went straight from the MCU's 3.3 V pin. This time nothing goes through the rails: the 12 V leads plug directly into VMOT and the adjacent GND, and 3.3 V plugs directly into VDD. With no 12 V node anywhere on the rails, shorting it to the logic rail is not possible in this case.
+
+A continuity test (unpowered) confirmed that the two GND pins on the A4988 are connected internally. So there were two equivalent ways to establish a common ground: bring both the MCU ground and the 12 V negative to the same `-` rail and jumper across, or connect the 12 V negative to the GND next to VMOT and the MCU ground to the GND next to VDD. I went with the latter. Either way the two domains share a reference, which they must -- the A4988 has to interpret the MCU's 3.3 V STEP and DIR levels against the same 0 V.
+
+The rule of thumb is: **Grounds connected, supplies never connected**
+
+Per the Pololu warning about voltage spikes on carriers with low-ESR ceramic capacitors, there is a 100 µF capacitor across VMOT and GND, placed close to the board rather than out at the supply end. With the capacitor at the far end, the lead wires are still part of the loop and the capacitor does not do its job.
+
+#### On the board I burned
+
+I still cannot reconstruct exactly what happened. What I remember is that the 12 V went in before the MCU was powered, but the wiring was disturbed afterwards, so the state I found might not have been the state it failed in. It may have been the order, or a 12 V lead touching the logic side. What argues against the order alone being the cause is that the same setup had worked repeatedly before.
+
+The general rule: power the MCU first, then the 12 V; on shutdown remove the 12 V first. But it is only a habit, not a safeguard. An unpowered chip is not a safe chip -- the protection diodes on the pins exist to shunt brief static discharges, not to survive sustained overvoltage, and with VDD at 0 V there is no supply to absorb the injected current. The actual safeguard is that 12 V now has no path to the logic side at all.
