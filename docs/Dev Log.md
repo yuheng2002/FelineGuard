@@ -147,3 +147,26 @@ So the approach is to find a factor pair that divides evenly and reads well. I p
     16 MHz / (16 * 1000) = 1000 Hz  ->  1 ms per tick
 
 1 ms is the unit this module exposes, so the application can ask for any duration it wants: a 5-second feed is just `TIMER_StartTimeout(5000)`.
+
+
+### 2026-08-09 -- MOTOR_CTRL and the A4988
+
+I implemented the MOTOR_CTRL module. The PWM that drives the motor's STEP input is generated on TIM2. Using the same equation as TIM6, I set the prescaler to 63 and ARR to 999:
+
+    16,000,000 / ((63 + 1) * (999 + 1)) = 250 Hz
+
+`OCPolarity` is HIGH, which means the output is high while `CNT < CCR`. CCR is 500, so the duty cycle is 50%.
+
+For driving the A4988 the duty cycle does not actually matter, because the driver steps on the rising edge and ignores everything else. Any CCR between 1 and ARR produces the same motion; only CCR = 0 breaks it, since that removes the rising edge entirely. This is the opposite of PWM for LED brightness, where the duty cycle *is* the output and a larger ARR buys finer resolution.
+
+I verified with a logic analyzer that the waveform is 250.56 Hz with a period of 3.991 ms. The 0.2% error comes from the HSI internal RC oscillator, which is specified at +/-1%.
+
+![250 Hz STEP waveform measured on PA0](250Hz_waveform.png)
+
+#### Notes from the A4988 documentation
+
+The Pololu page warns that "the STEP and DIR pins are not pulled to any particular voltage internally, so you should not leave either of these pins floating in your application." I enabled the internal pull-down on PA0 (STEP) and PA1 (DIR). The pull-down on STEP matters after `MOTOR_Stop()`, when the timer no longer drives the pin.
+
+"Please note that the RST pin is floating; if you are not using the pin, you can connect it to the adjacent SLP pin on the PCB to bring it high and enable the board." RST and SLP are shorted with a jumper.
+
+"Connecting or disconnecting a stepper motor while the driver is powered can destroy the driver." The reason is that motor coils are inductors and their current cannot change instantaneously: breaking the circuit while current is flowing produces a large `V = L * di/dt` spike that can punch through the driver's output stage. So: wire everything first, then power up; power down before touching any wire.

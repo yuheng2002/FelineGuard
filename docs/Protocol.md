@@ -13,13 +13,17 @@ supports, the rules that govern them, and the responses the host can expect.
 
 ## 2. Tools and Related Items
 - MCU: STM32F446RE (NUCLEO-F446RE, board version MB1136 C-04)
-- SPI display, e.g. an OLED module (model TBD)
+- Stepper driver: Pololu A4988 carrier
+- Motor: NEMA 17 bipolar stepper, 1.8 degrees per step, 1.2 A per coil
+- Motor supply: 12 V, separate from the logic supply (see Section 5.1)
 - A host-side scripting language, e.g. Python, for UART communication
+- SPI display (deferred, see Decision Log)
 
 ## 3. References
 - STMicroelectronics, *RM0390 Reference Manual: STM32F446xx*
 - STMicroelectronics, *UM1724 User Manual: STM32 Nucleo-64 boards*
 - Allegro MicroSystems, *A4988 Datasheet*
+- Pololu, *A4988 Stepper Motor Driver Carrier* ([product page](https://www.pololu.com/product/1182))
 
 ## 4. Available Operations
 
