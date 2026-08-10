@@ -161,7 +161,7 @@ For driving the A4988 the duty cycle does not actually matter, because the drive
 
 I verified with a logic analyzer that the waveform is 250.56 Hz with a period of 3.991 ms. The 0.2% error comes from the HSI internal RC oscillator, which is specified at +/-1%.
 
-![250 Hz STEP waveform measured on PA0](250Hz_waveform.png)
+![250 Hz STEP waveform measured on PA0](<250Hz waveform.png>)
 
 #### Notes from the A4988 documentation
 
