@@ -2,6 +2,7 @@
 #include "stm32f4xx_hal.h"
 #include "board.h"
 #include "UART_CTRL.h"
+#include "MOTOR_CTRL.h"
 
 void SysTick_Handler(void)
 {
@@ -32,16 +33,26 @@ int main(void)
 
 	UART_CTRL_Init();
 
+	MOTOR_Init();
+
 	uint8_t b;
 
 	while (1){
 		/* Stage 2: verify the UART_CTRL driver */
-		if (UART_CTRL_ReadByte(&b) && b == 0x31){ /* utf8 encoding "1" = 0x31 */
-			UART_CTRL_Write(&b, 1);
-			HAL_GPIO_WritePin(LD2_PORT, LD2_PIN, GPIO_PIN_SET);
-			blocking_delay();
-			HAL_GPIO_WritePin(LD2_PORT, LD2_PIN, GPIO_PIN_RESET);
-			blocking_delay();
+		if (UART_CTRL_ReadByte(&b)){
+			if (b == '1'){
+				UART_CTRL_Write(&b, 1);
+				HAL_GPIO_WritePin(LD2_PORT, LD2_PIN, GPIO_PIN_SET);
+				blocking_delay();
+				HAL_GPIO_WritePin(LD2_PORT, LD2_PIN, GPIO_PIN_RESET);
+				blocking_delay();
+				MOTOR_Start();
+			}
+
+			else if (b == '2'){
+				MOTOR_Stop();
+				UART_CTRL_Write(&b, 1);
+			}
 		}
 	}
 }

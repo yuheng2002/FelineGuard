@@ -4,6 +4,12 @@
 #include <stdint.h>
 #include "stm32f4xx_hal.h"
 
+/* interrupt priorities, lower value = higher priority
+ * SysTick is 0 (set by HAL_Init).
+ * UART is highest among peripherals */
+#define PRIO_USART2   5
+#define PRIO_TIM6     6
+
 /* User LED */
 #define LD2_PORT            GPIOA
 #define LD2_PIN             GPIO_PIN_5

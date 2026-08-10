@@ -7,7 +7,7 @@
 /* 31 + 1 = 32 = 2^5
  * making it power of 2 so mod calculation can be optimized to a bitwise AND
  * e.g. mod 32 is extract the lowest 5 bits ( & 0b11111) */
-#define IN_BUF_MAX_LENGTH 31
+#define IN_BUF_MAX_LENGTH 		31
 
 typedef struct{
 	volatile uint8_t front;

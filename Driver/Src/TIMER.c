@@ -1,7 +1,11 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include "board.h"
 #include "TIMER.h"
 #include "stm32f4xx_hal.h" /* this includes the entire HAL */
+
+#define TIM6_PRESCALER   	  15
+#define TIM6_ARR       		  999
 
 /* Tick period: 1 ms, so 1 tick = 1 ms and the caller's `ms` argument is the tick count directly.
  *
@@ -26,9 +30,9 @@
 static TIM_HandleTypeDef TIM6_Handle = {
 		.Instance = TIM6,
 		.Init = {
-				.Prescaler = 15,
+				.Prescaler = TIM6_PRESCALER,
 				.CounterMode = TIM_COUNTERMODE_UP,
-				.Period = 999,
+				.Period = TIM6_ARR,
 				.ClockDivision = TIM_CLOCKDIVISION_DIV1,
 				/* No RepetitionCounter needed here, use default */
 				.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE
@@ -48,7 +52,7 @@ void TIMER_Init(void){
 
 	/* 3. enable ISR & NVIC */
 	__HAL_TIM_ENABLE_IT(&TIM6_Handle, TIM_IT_UPDATE);
-	HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 6, 0); /* lower PreemptPriority than UART */
+	HAL_NVIC_SetPriority(TIM6_DAC_IRQn, PRIO_TIM6, 0); /* lower PreemptPriority than UART */
 	HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
 }
 

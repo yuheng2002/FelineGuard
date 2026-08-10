@@ -58,7 +58,7 @@ void UART_CTRL_Init(void){
 
 	/* 4. enable ISR & NVIC */
 	__HAL_UART_ENABLE_IT(&USART2_Handle, UART_IT_RXNE);
-	HAL_NVIC_SetPriority(USART2_IRQn, 5, 0);
+	HAL_NVIC_SetPriority(USART2_IRQn, PRIO_USART2, 0);
 	HAL_NVIC_EnableIRQ(USART2_IRQn);
 }
 
