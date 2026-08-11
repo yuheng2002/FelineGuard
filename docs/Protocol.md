@@ -13,8 +13,8 @@ supports, the rules that govern them, and the responses the host can expect.
 
 ## 2. Tools and Related Items
 - MCU: STM32F446RE (NUCLEO-F446RE, board version MB1136 C-04)
-- Stepper driver: Pololu A4988 carrier
-- Motor: NEMA 17 bipolar stepper, 1.8 degrees per step, 1.2 A per coil
+- Stepper driver: A4988 carrier (HiLetgo StepStick clone, R_CS = 0.1 Ω)
+- Motor: STEPPERONLINE NEMA 17 bipolar stepper, 1.8 degrees per step, 2 A per coil, 59 Ncm
 - Motor supply: 12 V, separate from the logic supply (see Section 5.1)
 - A host-side scripting language, e.g. Python, for UART communication
 - SPI display (deferred, see Decision Log)
@@ -23,7 +23,7 @@ supports, the rules that govern them, and the responses the host can expect.
 - STMicroelectronics, *RM0390 Reference Manual: STM32F446xx*
 - STMicroelectronics, *UM1724 User Manual: STM32 Nucleo-64 boards*
 - Allegro MicroSystems, *A4988 Datasheet*
-- Pololu, *A4988 Stepper Motor Driver Carrier* ([product page](https://www.pololu.com/product/1182))
+- Pololu, *A4988 Stepper Motor Driver Carrier* ([product page](https://www.pololu.com/product/1182)) -- documents the V_ref equation; note the sense resistor value differs from the clone used here
 
 ## 4. Available Operations
 
