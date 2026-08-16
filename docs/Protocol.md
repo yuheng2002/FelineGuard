@@ -8,8 +8,7 @@
 5. Considerations
 
 ## 1. Scope
-This document describes the cat feeder protocol: the operations the device
-supports, the rules that govern them, and the responses the host can expect.
+This document describes the cat feeder protocol: the operations the device supports, the rules that govern them, and the responses the host can expect.
 
 ## 2. Tools and Related Items
 - MCU: STM32F446RE (NUCLEO-F446RE, board version MB1136 C-04)

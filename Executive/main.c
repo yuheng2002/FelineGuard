@@ -9,11 +9,6 @@ void SysTick_Handler(void)
 	HAL_IncTick();
 }
 
-void blocking_delay(void){
-	volatile uint32_t i;
-	for (i = 0; i < 500000; i++){ }
-}
-
 int main(void)
 {
 	HAL_Init();
@@ -42,10 +37,6 @@ int main(void)
 		if (UART_CTRL_ReadByte(&b)){
 			if (b == '1'){
 				UART_CTRL_Write(&b, 1);
-				HAL_GPIO_WritePin(LD2_PORT, LD2_PIN, GPIO_PIN_SET);
-				blocking_delay();
-				HAL_GPIO_WritePin(LD2_PORT, LD2_PIN, GPIO_PIN_RESET);
-				blocking_delay();
 				MOTOR_Start();
 			}
 
