@@ -75,6 +75,7 @@ void TIM6_DAC_IRQHandler(void){
 	}
 }
 
+/* ms must be greater than 0; a zero timeout does not start the timer. */
 void TIMER_StartTimeout(uint32_t ms){
 	numTicks = ms; /* does not do any math, just for semantics */
 
