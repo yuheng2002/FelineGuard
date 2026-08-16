@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 #include "Comms.h"
 #include "UART_CTRL.h"
 
@@ -27,7 +28,7 @@ static bool discarding;
  * the rest of it is discarded up to the next '\n', per Protocol section 4.5.
  *
  * The returned pointer is valid until the next call. */
-const char* Comms_Poll_Command(void){
+const char* Comms_PollCommand(void){
 	uint8_t byte;
 
 	/* UART_CTRL_ReadByte does two things simultaneously
@@ -73,4 +74,9 @@ const char* Comms_Poll_Command(void){
 	}
 
 	return NULL;
+}
+
+void Comms_SendResponse(const char* response){
+	UART_CTRL_Write((const uint8_t *)response, (uint16_t)strlen(response));
+	UART_CTRL_Write((const uint8_t *)"\n", 1);
 }
