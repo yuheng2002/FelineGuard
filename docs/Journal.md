@@ -255,4 +255,16 @@ Per the arbitration diagram there are three states. When idle, a request from an
 
 So the module needs a second entry point. `Feed_Poll()` is called every pass of the main loop and asks `TIMER_InProg()` whether the current feed is still running. When it is not, that pass is the one where the feed just completed: stop the motor, then either start the pending feed or return to idle.
 
-This split is also why stopping the motor lives in the main loop rather than in the timer ISR. If the ISR stopped it, a system whose main loop had already hung would still finish the feed cleanly and look successful. Requiring the main loop to do it makes "feed complete" mean that the code the watchdog supervises is still alive.
+This split is also why stopping the motor lives in the main loop rather than in the timer ISR.
+
+There are two different ways this firmware can fail, and they behave differently.
+
+**The main loop hangs, but the CPU is fine.** Say it gets stuck in a `while(1)` -- which is exactly what the `CRASH` command does. The CPU keeps fetching and executing, and interrupts keep firing: the timer counts down, NVIC raises the request, the CPU jumps into the ISR, runs it, and returns straight back into the loop it is stuck in. So if the ISR stopped the motor, the feed would end cleanly on schedule and everything would look normal from the outside, while the main loop had in fact been dead for seconds.
+
+Requiring the main loop to stop the motor makes "feed complete" mean something stronger: the code the watchdog supervises is still alive.
+
+**Something worse happens and the CPU ends up in the HardFault handler.** That exception has priority -1, above every peripheral interrupt, and the default handler is itself a `while(1)`. The CPU stays inside a higher-priority exception context, so the timer ISR never gets serviced at all -- the motor would keep running.
+
+This is where the watchdog comes in. It does not care which of the two happened, or what caused it. It only cares that the main loop stopped refreshing it, and resets the system either way.
+
+Which is also why refreshing the watchdog has to be the main loop's job, and only the main loop's: the whole point is that the refresh is evidence the supervised code is still running.
