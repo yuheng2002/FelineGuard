@@ -3,6 +3,9 @@
 #include "board.h"
 #include "UART_CTRL.h"
 #include "MOTOR_CTRL.h"
+#include "Feed.h"
+#include "CmdProc.h"
+#include "TIMER.h"
 
 void SysTick_Handler(void)
 {
@@ -30,20 +33,10 @@ int main(void)
 
 	MOTOR_Init();
 
-	uint8_t b;
+	TIMER_Init();
 
 	while (1){
-		/* Stage 2: verify the UART_CTRL driver */
-		if (UART_CTRL_ReadByte(&b)){
-			if (b == '1'){
-				UART_CTRL_Write(&b, 1);
-				MOTOR_Start();
-			}
-
-			else if (b == '2'){
-				MOTOR_Stop();
-				UART_CTRL_Write(&b, 1);
-			}
-		}
+		Feed_Poll();
+		CmdProc_process();
 	}
 }
