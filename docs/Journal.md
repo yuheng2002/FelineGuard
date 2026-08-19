@@ -268,3 +268,62 @@ Requiring the main loop to stop the motor makes "feed complete" mean something s
 This is where the watchdog comes in. It does not care which of the two happened, or what caused it. It only cares that the main loop stopped refreshing it, and resets the system either way.
 
 Which is also why refreshing the watchdog has to be the main loop's job, and only the main loop's: the whole point is that the refresh is evidence the supervised code is still running.
+
+### 2026-08-18 -- First end-to-end run
+
+I wired the two application polls into the main loop:
+
+    while (1) {
+        Feed_Poll();
+        CmdProc_Process();
+    }
+
+and sent `FEED\n` from the host (VS Code's Serial Monitor extension) to check the whole chain: UART interrupt, ring buffer, line assembly, command match, arbitration, response. Below is the log:
+```text
+    ---- Opened the serial port COM4 ----
+    ---- Sent utf8 encoded message: "FEED\n" ----
+    Invalid command
+    ---- Sent utf8 encoded message: "FEED\n" ----
+    Feeding started
+    ---- Sent utf8 encoded message: "FEEDFEED\n" ----
+    Invalid command
+    ---- Sent utf8 encoded message: "FEED\n" ----
+    Feeding started
+    ---- Sent utf8 encoded message: "FEED\n" ----
+    Busy feeding
+```
+
+#### Getting the terminator sent at all
+
+The Serial Monitor extension does not let me type `\n` directly -- typing a backslash sends a literal backslash. Without a terminator, Comms never completes a line, so nothing downstream ever runs. The fix was the **Line ending** dropdown in the extension, set to LF.
+
+#### Why bytes went missing under a breakpoint
+
+Before I found that, I put a breakpoint on the `default` case in `Comms_PollCommand()` to check whether bytes were arriving at all:
+
+    default:
+        if (command_line_idx < COMMAND_LINE_MAX){
+            command_line[command_line_idx] = (char)byte;
+            command_line_idx++;
+        } else {
+            discarding = true;
+        }
+        break;
+
+It did hit, which confirmed `UART_CTRL_ReadByte()` was delivering bytes. But the behaviour was consistent across two runs: after sending `FEED`, the `F` and the first `E` made it into `command_line`, and everything after that was **lost**.
+
+The cause is the breakpoint itself. Halting the CPU stops the ISR from running, but it does not stop the USART peripheral -- that keeps receiving in hardware regardless of what the CPU is doing.
+
+`RXNE` is set when a complete byte moves from the shift register into the data register. So: `F` lands in DR, the CPU reads it and then halts. `E` lands in DR and sets `RXNE`, but with the CPU halted nobody reads it, so DR stays occupied. When the next byte finishes arriving in the shift register there is nowhere to put it, and `ORE` is set (RM0390 p.784). The byte already in DR is preserved; the one waiting in the shift register is the one lost, overwritten by whatever arrives next.
+
+So `Step Over (F6)` let me read the `E` sitting in DR, but the remaining `E` and `D` were gone.
+
+Worth noting this was self-inflicted -- I was debugging a problem that only existed because I had not sent a terminator. But the takeaway stands: **do not put breakpoints on the receive path.** Halting the CPU for even a few hundred microseconds is enough to overrun the UART at 115200 baud, where a byte arrives every 87 us. It also confirms the ORE branch in `USART2_IRQHandler` is doing its job -- without it the flag would have stayed set and RXNE would never have fired again.
+
+#### Reading the log
+
+The first `Invalid command` was leftover state: the breakpoint sessions had left bytes in `command_line` with a non-zero index, and I had not reset the chip. The next `FEED\n` was appended to that garbage rather than starting a fresh line.
+
+`FEEDFEED\n` correctly returned `Invalid command`. That is Protocol section 4.5 working as intended: every line is interpreted as one command, so an eight-character line simply matches nothing. There is no such thing as a partially valid line.
+
+The last pair is the one worth having: two `FEED\n` sent a moment apart. The first started a feed, and the second arrived inside the 5-second window and was dropped with `Busy feeding`. That is the centre cell of the arbitration table -- a request from UART or the button is dropped while the motor is busy, and only a scheduled feed is deferred. It also exercises the ring buffer, since the second command's bytes arrive while the first response is still being transmitted.
