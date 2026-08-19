@@ -46,9 +46,17 @@ void MOTOR_Init(void){
 			.Pin       = MOTOR_STEP_PIN,
 			.Mode      = GPIO_MODE_AF_PP,
 			.Pull      = GPIO_PULLDOWN,
-			.Speed     = GPIO_SPEED_FREQ_HIGH,
+			.Speed     = GPIO_SPEED_FREQ_LOW,
 			.Alternate = GPIO_AF1_TIM2     /* datasheet Table 11 (p.58) */
 	};
+
+	GPIO_InitTypeDef MOTOR_EN  = {
+			.Pin   = MOTOR_EN_PIN,
+			.Mode  = GPIO_MODE_OUTPUT_PP,
+			.Pull  = GPIO_NOPULL,
+			.Speed = GPIO_SPEED_FREQ_LOW,
+	};
+
 
 	/* 1. Clock Enable */
 	__HAL_RCC_GPIOA_CLK_ENABLE();
@@ -60,15 +68,23 @@ void MOTOR_Init(void){
 	HAL_GPIO_Init(MOTOR_DIR_PORT, &MOTOR_DIR);
 	HAL_GPIO_WritePin(MOTOR_DIR_PORT, MOTOR_DIR_PIN, GPIO_PIN_SET);
 
+	HAL_GPIO_Init(MOTOR_EN_PORT, &MOTOR_EN);
+	HAL_GPIO_WritePin(MOTOR_EN_PORT, MOTOR_EN_PIN, GPIO_PIN_SET);
+
 	/* 3. TIM2 & PWM Init */
 	HAL_TIM_PWM_Init(&TIM2_Handle);
 	HAL_TIM_PWM_ConfigChannel(&TIM2_Handle, &TIM2_OC_Config, TIM_CHANNEL_1);
 }
 
+/* A4988 EN is active-low: driving it low enables the coil drivers.
+ * Enable before starting the PWM, so the first STEP edge is not lost;
+ * stop the PWM before disabling, so no edge lands on a disabled driver. */
 void MOTOR_Start(void){
+	HAL_GPIO_WritePin(MOTOR_EN_PORT, MOTOR_EN_PIN, GPIO_PIN_RESET);
 	HAL_TIM_PWM_Start(&TIM2_Handle, TIM_CHANNEL_1);
 }
 
 void MOTOR_Stop(void){
 	HAL_TIM_PWM_Stop(&TIM2_Handle, TIM_CHANNEL_1);
+	HAL_GPIO_WritePin(MOTOR_EN_PORT, MOTOR_EN_PIN, GPIO_PIN_SET);
 }
