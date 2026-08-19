@@ -28,7 +28,7 @@ static const uint8_t rcvf_buf_cap = (uint8_t)sizeof(receive_buf.buffer);
 
 /* HAL_UART_Init() configures the specific UART bus and general specs such as BaudRate, WordLength...
  * But it does not configure pins, so this function does it */
-void UART_CTRL_Init(void){
+void UART_Init(void){
 	GPIO_InitTypeDef USART2_TX = {
 			.Pin       = USART2_TX_PIN,
 			.Mode      = GPIO_MODE_AF_PP,
@@ -63,7 +63,7 @@ void UART_CTRL_Init(void){
 }
 
 /* pass data to comms buffer */
-bool UART_CTRL_ReadByte(uint8_t *out){
+bool UART_ReadByte(uint8_t *out){
 	/* check if buffer is empty */
 	if (receive_buf.front == receive_buf.rear){
 		return false;
@@ -74,7 +74,7 @@ bool UART_CTRL_ReadByte(uint8_t *out){
 	return true;
 }
 
-void UART_CTRL_Write(const uint8_t *data, uint16_t len){
+void UART_Write(const uint8_t *data, uint16_t len){
 	HAL_UART_Transmit(&USART2_Handle, data, len, HAL_MAX_DELAY);
 }
 

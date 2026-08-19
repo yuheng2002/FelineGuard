@@ -19,8 +19,8 @@ typedef struct{
 	volatile uint8_t buffer[IN_BUF_MAX_LENGTH + 1];
 }ring_buffer;
 
-void UART_CTRL_Init(void);
-bool UART_CTRL_ReadByte(uint8_t *out);
-void UART_CTRL_Write(const uint8_t *data, uint16_t len);
+void UART_Init(void);
+bool UART_ReadByte(uint8_t *out);
+void UART_Write(const uint8_t *data, uint16_t len);
 
 #endif /* INC_UART_CTRL_H_ */
