@@ -6,37 +6,37 @@
 #include "Feed.h"
 #include "CmdProc.h"
 #include "TIMER.h"
+#include "IWDG_CTRL.h"
+#include "Comms.h"
 
 void SysTick_Handler(void)
 {
 	HAL_IncTick();
 }
 
-int main(void)
+void init_all(void)
 {
 	HAL_Init();
 
-	/* Stage 1: verify the HAL GPIO path by turning on/off the on-board User LD2 */
-	__HAL_RCC_GPIOA_CLK_ENABLE();
-
-	GPIO_InitTypeDef LD2_Config = {
-			.Pin = LD2_PIN,
-			.Mode = GPIO_MODE_OUTPUT_PP,
-			.Pull = GPIO_NOPULL,
-			.Speed = GPIO_SPEED_FREQ_LOW
-			// no AF
-	};
-
-	HAL_GPIO_Init(LD2_PORT, &LD2_Config);
-
-	UART_CTRL_Init();
-
+	UART_Init();
 	MOTOR_Init();
-
 	TIMER_Init();
+	IWDG_Init();
+}
 
-	while (1){
+int main(void)
+{
+	init_all();
+
+	if (IWDG_WasResetByWatchdog())
+	{
+		Comms_SendResponse("Recovered from crash");
+	}
+
+	while (1)
+	{
+		IWDG_Refresh();
 		Feed_Poll();
-		CmdProc_process();
+		CmdProc_Process();
 	}
 }
