@@ -4,7 +4,7 @@
 #include "Comms.h"
 #include "Feed.h"
 
-void CmdProc_process(void){
+void CmdProc_Process(void){
 	const char *command = Comms_PollCommand();
 
 	if (!command) return;
@@ -27,15 +27,18 @@ void CmdProc_process(void){
 	else if (strcmp(command, "SCHED") == 0){
 
 	}
+
 #ifdef DEBUG
 	else if (strcmp(command, "CRASH") == 0){
 		/* hangs CPU deliberately */
 		while (1){}
 	}
 	else if (strcmp(command, "CRASHFEED") == 0){
-
+		Feed_Request(FEED_CMD);
+		while (1){}
 	}
 #endif
+
 	else{
 		Comms_SendResponse("Invalid command");
 	}
