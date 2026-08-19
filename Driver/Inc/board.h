@@ -7,8 +7,8 @@
 /* interrupt priorities, lower value = higher priority
  * SysTick is 0 (set by HAL_Init).
  * UART is highest among peripherals */
-#define PRIO_USART2   5
-#define PRIO_TIM6     6
+#define PRIO_USART2   		5
+#define PRIO_TIM6     		6
 
 /* User LED */
 #define LD2_PORT            GPIOA
@@ -19,6 +19,8 @@
 #define MOTOR_DIR_PIN       GPIO_PIN_1
 #define MOTOR_STEP_PORT     GPIOA
 #define MOTOR_STEP_PIN      GPIO_PIN_0
+#define MOTOR_EN_PORT       GPIOA
+#define MOTOR_EN_PIN        GPIO_PIN_8
 
 /* USART2 pins */
 #define USART2_RX_PORT      GPIOA
