@@ -280,17 +280,17 @@ I wired the two application polls into the main loop:
 
 and sent `FEED\n` from the host (VS Code's Serial Monitor extension) to check the whole chain: UART interrupt, ring buffer, line assembly, command match, arbitration, response. Below is the log:
 ```text
-    ---- Opened the serial port COM4 ----
-    ---- Sent utf8 encoded message: "FEED\n" ----
-    Invalid command
-    ---- Sent utf8 encoded message: "FEED\n" ----
-    Feeding started
-    ---- Sent utf8 encoded message: "FEEDFEED\n" ----
-    Invalid command
-    ---- Sent utf8 encoded message: "FEED\n" ----
-    Feeding started
-    ---- Sent utf8 encoded message: "FEED\n" ----
-    Busy feeding
+---- Opened the serial port COM4 ----
+---- Sent utf8 encoded message: "FEED\n" ----
+Invalid command
+---- Sent utf8 encoded message: "FEED\n" ----
+Feeding started
+---- Sent utf8 encoded message: "FEEDFEED\n" ----
+Invalid command
+---- Sent utf8 encoded message: "FEED\n" ----
+Feeding started
+---- Sent utf8 encoded message: "FEED\n" ----
+Busy feeding
 ```
 
 #### Getting the terminator sent at all
@@ -327,3 +327,85 @@ The first `Invalid command` was leftover state: the breakpoint sessions had left
 `FEEDFEED\n` correctly returned `Invalid command`. That is Protocol section 4.5 working as intended: every line is interpreted as one command, so an eight-character line simply matches nothing. There is no such thing as a partially valid line.
 
 The last pair is the one worth having: two `FEED\n` sent a moment apart. The first started a feed, and the second arrived inside the 5-second window and was dropped with `Busy feeding`. That is the centre cell of the arbitration table -- a request from UART or the button is dropped while the motor is busy, and only a scheduled feed is deferred. It also exercises the ring buffer, since the second command's bytes arrive while the first response is still being transmitted.
+
+### 2026-08-19 -- IWDG and the crash commands
+
+With IWDG_CTRL module implemented, I added `IWDG_Refresh()` into the main loop, as the first thing each iteration, per the control flow diagram.
+
+#### Timing
+
+The IWDG runs off the LSI. With the prescaler set to 32, the counter clock is 32 kHz / 32 = 1 kHz, so one count is 1 ms. RLR is set to 999, which gives a timeout of about 1 second.
+
+That number is an upper bound on how long the CPU may go without refreshing, not how often it actually refreshes. In practice the loop comes around far faster than that; the timeout only has to be longer than the slowest legitimate pass.
+
+One thing worth writing down: the LSI is an internal RC oscillator, and the datasheet specifies it at 17-47 kHz (datasheet p.106), not exactly 32. So "1 second" is really somewhere between roughly 0.7 s and 1.9 s. That is fine here, because nothing in the firmware blocks for more than a few milliseconds and the margin is forgiving, but it means the timeout should never be treated as a precise value.
+
+#### Reporting the reset cause
+
+`RCC_CSR` records why the last reset happened -- `PINRSTF` for the reset button, `SFTRSTF` for a software reset, `IWDGRSTF` for the watchdog, and so on. These flags are not cleared by a reset, which is exactly what makes them useful; they have to be cleared explicitly by writing RMVF.
+
+I added `IWDG_WasResetByWatchdog()`, which reads `IWDGRSTF` and returns a bool. For now that is all I need, but a switch/case over the other flags could report the exact cause later.
+
+It is called once in `main`, after init and before the loop:
+
+```c
+if (IWDG_WasResetByWatchdog())
+{
+    Comms_SendResponse("Recovered from crash");
+}
+```
+
+This felt counter-intuitive at first -- my instinct was that the main loop should poll it, since anything before `while(1)` only runs once and by then the crash has already happened. But that is backwards. The crash does not return to this current session; the watchdog *resets the chip*, so `main` starts over from the top. The flag survives the reset, the check runs on the way back up, and the message goes out. Startup is the only place this check makes sense.
+
+#### CRASH
+
+```c
+else if (strcmp(command, "CRASH") == 0){
+    /* hangs the CPU deliberately */
+    while (1){}
+}
+```
+
+The loop stops the main loop from refreshing the watchdog. About a second later the chip resets, and the next boot reports it.
+
+#### CRASHFEED
+
+```c
+else if (strcmp(command, "CRASHFEED") == 0){
+    Feed_Request(FEED_CMD);
+    while (1){}
+}
+```
+
+This one starts a feed and *then* hangs, so the crash happens while the motor is running. It tests something `CRASH` cannot: that a fault during motor motion **still ends with the motor stopped**.
+
+Nothing in my code stops it. `Feed_Poll()` normally does that from the main loop once the timer expires, but the main loop is dead. What stops the motor is the reset itself: TIM2's `CEN` is cleared, the output compare enable goes with it, and PA0 reverts to a floating input, so the STEP waveform disappears. All of that is hardware, at a point where the firmware is no longer executing anything.
+
+The observable result is that the motor runs for roughly a second and stops, instead of the full five. The watchdog timeout is shorter than a feed, so the reset arrives first.
+
+```text
+---- Sent utf8 encoded message: "FEED\n" ----
+Feeding started
+---- Sent utf8 encoded message: "CRASH\n" ----
+Recovered from crash
+---- Sent utf8 encoded message: "CRASHFEED\n" ----
+Recovered from crash
+```
+
+#### Noise and heat at idle, and the EN pin
+
+Even following the power-up order -- MCU first, then the 12 V -- the motor hummed continuously while idle and the A4988 felt warm.
+
+The hum is normal for a stepper: both coils stay energised at standstill to hold position, and the driver maintains that current by chopping, which the coils turn into audible noise. But holding current is dissipated the whole time, and a cat feeder is idle for well over 99% of its life.
+
+I had been ignoring the `EN` pin on the A4988, which is active low: driving it high disables the coil drivers entirely. I assigned it to PA8 and added it to MOTOR_CTRL module. In `MOTOR_Start()` I pull EN low *before* starting the PWM, so no STEP edge lands on a disabled driver. In `MOTOR_Stop()` the order is reversed -- stop the PWM first, then disable -- though that direction matters less, since the motion is ending either way.
+
+Known limitation: between power-on and `MOTOR_Init()`, PA8 is a floating input and the A4988's internal pull-down holds EN low, so the coils are briefly energised. An external pull-up would close that window, but it would mean running a 3.3 V rail on the breadboard, which conflicts with the wiring rule that no logic voltage goes on a rail at all. A few milliseconds of holding current is harmless, so I left it.
+
+#### On the heat
+
+With a finger on the A4988's heat sink it felt slightly warm, but I could hold it there almost forever. That is not a measurement, and I do not think my subjective impression is worth much in this case. Adding `EN` should remove the question entirely, since the coils are now only energised during the five seconds of an actual feed.
+
+The open question is the sense resistor. Both the physical board and the Amazon listing photo show `R100`, i.e. 0.1 Ω, and I set `V_ref` on that basis. But Pololu's own documentation states 0.068 Ω for their carriers, so mine being a clone, I cannot be completely sure which value applies. If the real value is 0.05 Ω, the actual current is double what I calculated.
+
+I wanted to measure the coil current directly, but my multimeter came with probe tips rather than alligator clips, and the measurement requires breaking one motor lead to put the meter in series. Pololu is explicit that "connecting or disconnecting a stepper motor while the driver is powered can destroy the driver", and having the meter fall off mid-measurement is exactly that scenario. Left for another day with proper clips: the coil current only flows during a feed now, but I would still rather know the number than assume it.
