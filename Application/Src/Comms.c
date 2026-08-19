@@ -34,7 +34,7 @@ const char* Comms_PollCommand(void){
 	/* UART_CTRL_ReadByte does two things simultaneously
 	 * 1. returns false if receive buffer is empty,
 	 * 2. or returns true if a byte is loaded from the receive buffer to the passed in buffer */
-	while (UART_CTRL_ReadByte(&byte))
+	while (UART_ReadByte(&byte))
 	{
 		if (discarding)
 		{
@@ -77,6 +77,6 @@ const char* Comms_PollCommand(void){
 }
 
 void Comms_SendResponse(const char* response){
-	UART_CTRL_Write((const uint8_t *)response, (uint16_t)strlen(response));
-	UART_CTRL_Write((const uint8_t *)"\n", 1);
+	UART_Write((const uint8_t *)response, (uint16_t)strlen(response));
+	UART_Write((const uint8_t *)"\n", 1);
 }
