@@ -8,6 +8,7 @@
 #include "TIMER.h"
 #include "IWDG_CTRL.h"
 #include "Comms.h"
+#include "Button.h"
 
 void SysTick_Handler(void)
 {
@@ -22,6 +23,7 @@ void init_all(void)
 	MOTOR_Init();
 	TIMER_Init();
 	IWDG_Init();
+	Button_Init();
 }
 
 int main(void)
@@ -38,5 +40,6 @@ int main(void)
 		IWDG_Refresh();
 		Feed_Poll();
 		CmdProc_Process();
+		Button_Poll();
 	}
 }
