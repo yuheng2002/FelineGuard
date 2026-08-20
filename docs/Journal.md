@@ -409,3 +409,39 @@ With a finger on the A4988's heat sink it felt slightly warm, but I could hold i
 The open question is the sense resistor. Both the physical board and the Amazon listing photo show `R100`, i.e. 0.1 Ω, and I set `V_ref` on that basis. But Pololu's own documentation states 0.068 Ω for their carriers, so mine being a clone, I cannot be completely sure which value applies. If the real value is 0.05 Ω, the actual current is double what I calculated.
 
 I wanted to measure the coil current directly, but my multimeter came with probe tips rather than alligator clips, and the measurement requires breaking one motor lead to put the meter in series. Pololu is explicit that "connecting or disconnecting a stepper motor while the driver is powered can destroy the driver", and having the meter fall off mid-measurement is exactly that scenario. Left for another day with proper clips: the coil current only flows during a feed now, but I would still rather know the number than assume it.
+
+### 2026-08-20 -- Button
+
+Added the `Button` module. The behaviour copies the commercial feeder I own: the user can hold the button as long as they like, but the request is raised when they let go, not when they press. One press and release is exactly one feed request.
+
+PC13 is active low -- the pin reads 0 while the button is held and 1 once it is released -- so the event to detect is the transition from pressed back to idle.
+
+#### Polled, not interrupt-driven
+
+The button does not use EXTI. Main calls `Button_Poll()` once per pass, in the order given by the control flow diagram.
+
+This keeps the module coherent with the ones already there. CmdProc raises a feed request when command matches `FEED`; Button raises one when it sees a release. Main walks through each source in order but never decides anything itself -- each module applies its own logic and calls `Feed_Request()` on its own behalf.
+
+Polling is also enough on its own terms: a human press lasts at least milliseconds while the loop comes around in microseconds. An interrupt would buy nothing here and would cost an extra interrupt source.
+
+```c
+if (was_pressed && !pressed){
+    Feed_Request(FEED_BUTTON);
+}
+```
+
+#### No software debounce
+
+The Nucleo's B1 button is filtered in hardware by an RC network on the board, so debouncing here would be redundant. If this ever moves to a board without that filter, the fix is confined to this module -- nothing else in the system knows or cares how a button press is detected. That containment is the practical payoff of using the layered architecture.
+
+#### The module was written but never initialised
+
+The first time I tested it, nothing happened at all. The code was fine; `Button_Init()` was simply missing from `init_all()`, so GPIOC's clock was never enabled and PC13 was left floating.
+
+Worth noting because of how it presents: a module that is never initialised looks exactly like a module that is broken. Nothing in the build catches it, and reading `Button.c` over and over would never have found it. The check is to confirm the module is actually wired into startup before questioning its logic.
+
+#### Verification
+
+Holding the button for various lengths of time and releasing produced exactly one feed each, starting on release.
+
+I also pressed and released the button while a feed started by the `FEED` command was already running. The motor still ran for about five seconds, not longer -- the button request was dropped, as the arbitration table specifies. Nothing is reported in that case, since the button has no return path to tell anyone.
