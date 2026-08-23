@@ -29,18 +29,6 @@ void init_all(void)
 		Comms_SendResponse("RTC clock failed to initialize");
 	}
 
-	if (!RTC_IsTimeSet())
-	{
-		Comms_SendResponse("Time not set");
-	}
-
-	RTC_SetTime(14, 30);
-
-	RTC_TimeTypeDef t;
-	RTC_DateTypeDef d;
-	HAL_RTC_GetTime(&RTC_Handle, &t, RTC_FORMAT_BIN);
-	HAL_RTC_GetDate(&RTC_Handle, &d, RTC_FORMAT_BIN);
-
 	IWDG_Init();
 }
 
