@@ -9,6 +9,7 @@
 #include "IWDG_CTRL.h"
 #include "Comms.h"
 #include "Button.h"
+#include "RTC_CTRL.h"
 
 void SysTick_Handler(void)
 {
@@ -22,8 +23,25 @@ void init_all(void)
 	UART_Init();
 	MOTOR_Init();
 	TIMER_Init();
-	IWDG_Init();
 	Button_Init();
+	if (!RTC_Init())
+	{
+		Comms_SendResponse("RTC clock failed to initialize");
+	}
+
+	if (!RTC_IsTimeSet())
+	{
+		Comms_SendResponse("Time not set");
+	}
+
+	RTC_SetTime(14, 30);
+
+	RTC_TimeTypeDef t;
+	RTC_DateTypeDef d;
+	HAL_RTC_GetTime(&RTC_Handle, &t, RTC_FORMAT_BIN);
+	HAL_RTC_GetDate(&RTC_Handle, &d, RTC_FORMAT_BIN);
+
+	IWDG_Init();
 }
 
 int main(void)
