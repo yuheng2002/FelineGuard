@@ -73,7 +73,7 @@ bool RTC_SetTime(uint8_t hour, uint8_t minute)
 {
 	if (hour > RTC_MAX_HOUR || minute > RTC_MAX_MINUTE) return false;
 
-	static RTC_DateTypeDef date = {
+	RTC_DateTypeDef date = {
 			/* Weekday, Month, Date don't matter in this project, give them some random value */
 		    .WeekDay = RTC_WEEKDAY_MONDAY,
 		    .Month   = RTC_MONTH_JANUARY,
@@ -84,7 +84,7 @@ bool RTC_SetTime(uint8_t hour, uint8_t minute)
 	HAL_StatusTypeDef status = HAL_RTC_SetDate(&RTC_Handle, &date, RTC_FORMAT_BIN);
 	if (status != HAL_OK) return false;
 
-	static RTC_TimeTypeDef time = {
+	RTC_TimeTypeDef time = {
 			.Hours   = hour,
 			.Minutes = minute,
 			.Seconds = 0, 	/* not necessary for this project */
