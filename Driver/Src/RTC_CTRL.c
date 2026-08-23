@@ -74,7 +74,7 @@ bool RTC_SetTime(uint8_t hour, uint8_t minute)
 	if (hour > RTC_MAX_HOUR || minute > RTC_MAX_MINUTE) return false;
 
 	RTC_DateTypeDef date = {
-			/* Weekday, Month, Date don't matter in this project, give them some random value */
+			/* WeekDay, Month and Date are irrelevant here; any valid value will do */
 		    .WeekDay = RTC_WEEKDAY_MONDAY,
 		    .Month   = RTC_MONTH_JANUARY,
 		    .Date    = 1,
