@@ -462,50 +462,49 @@ That is a different trade-off from the IWDG, which runs off the LSI. The LSI is 
 
 #### Why RTC_Init returns a bool
 
-Every other Init in this project ignores the `HAL_StatusTypeDef` return value, because those functions only enable a clock and write configuration registers -- there is nothing there that can fail.
+Every other Init in this project ignores the `HAL_StatusTypeDef` return value, because those functions only enable a clock and write configuration registers -- they hardly fail.
 
 The RTC is different: `HAL_RCC_OscConfig()` waits on a physical crystal to start oscillating, and that genuinely can time out. So `RTC_Init()` returns `bool` and gives up early if the LSE does not come up.
 
 Without that check, `HAL_RTC_Init()` would still run and everything would look fine, but the RTC would have no clock and the calendar would never advance. The failure would be silent: I would only find out by noticing a scheduled feed never happened, and then I would not know whether the problem was in CmdProc setting the time wrong or in the RTC not running at all.
 ```c
-    if (!RTC_Init())
-    {
-        Comms_SendResponse("RTC clock failed to initialize");
-    }
+if (!RTC_Init())
+{
+    Comms_SendResponse("RTC clock failed to initialize");
+}
 ```
 Reporting it over UART is enough for now. A real product would need something better, since the host is not always connected.
 
-#### RTC_IsTimeSet and the year field
+#### `RTC_IsTimeSet` and the year field
 
-`bool RTC_IsTimeSet(void)` reads the `INITS` flag in `RTC_ISR`. What is worth knowing is how the hardware decides: RM0390 says the flag is set when the calendar **year field is different from 0**, 0 being the backup domain reset value.
+`bool RTC_IsTimeSet(void)` reads the `INITS` flag in `RTC_ISR`. What is worth knowing is how the hardware decides: RM0390 says the flag is set when the calendar **year field is different from 0** -- 0 being the backup domain reset value.
 
 So even though this project has no use for the year -- it feeds the cat at fixed times of day and never cares what day it is -- the year still has to be set to something non-zero. Leaving it at 0 would make `RTC_IsTimeSet()` return false forever, and the whole "has the clock been set" branch in the protocol would never work.
 
-#### RTC_SetTime, and what actually had garbage in it
+#### `RTC_SetTime` and what actually had garbage in it
 
 `bool RTC_SetTime(uint8_t hour, uint8_t minute)` guards the input first (`hour > 23` or `minute > 59` is rejected), then fills an `RTC_DateTypeDef` and an `RTC_TimeTypeDef` and hands them to `HAL_RTC_SetDate()` and `HAL_RTC_SetTime()`. Both return values are checked; either one failing fails the whole call.
 ```c
-    RTC_DateTypeDef date = {
-        /* WeekDay, Month and Date are irrelevant here; any valid value will do */
-        .WeekDay = RTC_WEEKDAY_MONDAY,
-        .Month   = RTC_MONTH_JANUARY,
-        .Date    = 1,
-        .Year    = RTC_DEFAULT_YEAR   /* must be non-zero: INITS keys off the year field */
-    };
+RTC_DateTypeDef date = {
+    /* WeekDay, Month and Date are irrelevant here; any valid value will do */
+    .WeekDay = RTC_WEEKDAY_MONDAY,
+    .Month   = RTC_MONTH_JANUARY,
+    .Date    = 1,
+    .Year    = RTC_DEFAULT_YEAR   /* must be non-zero: INITS keys off the year field */
+};
 
-    // ......
+// ......
 
-    RTC_TimeTypeDef time = {
-        .Hours   = hour,
-        .Minutes = minute,
-        .Seconds = 0,
-    };
+RTC_TimeTypeDef time = {
+    .Hours   = hour,
+    .Minutes = minute,
+    .Seconds = 0,
+};
 ```
-I set the date before the time on purpose. `INITS` is driven by the year field, so if the date write failed after the time write had already succeeded, the calendar would be running while `RTC_IsTimeSet()` still reported false. Doing the date first means a failure leaves the state as a clean "never set".
 
-When I later inspected the structs in the debugger, some fields held garbage, and I initially blamed the local structs in `RTC_SetTime()`. That was wrong on two counts.
+When I later inspected the structs in the debugger, some fields held garbage, and I initially blamed the local structs in `RTC_SetTime()`. That was wrong from two perspectives.
 
-First, a partially written initializer list is not the same as no initializer at all. If an object has any initializer, C zero-initializes every member that is not listed -- automatic storage duration included. So `date` and `time` above have no garbage; `.SubSeconds`, `.DayLightSaving` and the rest are all 0.
+First, **a partially written initializer list is not the same as no initializer at all**. If an object has any initializer, C zero-initializes every member that is not listed -- automatic storage duration included. So `date` and `time` above have no garbage; `.SubSeconds`, `.DayLightSaving` and the rest are all 0.
 
 The garbage was in the read-back structs I put in `init_all()` for testing, which had no initializer at all:
 ```c
@@ -514,23 +513,23 @@ The garbage was in the read-back structs I put in `init_all()` for testing, whic
 ```
 Those really are whatever was left on the stack. And `DayLightSaving` and `StoreOperation` stayed garbage even after the call, because `HAL_RTC_GetTime()` never writes them -- reading the HAL source, it only fills SubSeconds, SecondFraction, Hours, Minutes, Seconds and TimeFormat. A HAL "Get" function does not necessarily populate the whole struct.
 
-I did briefly consider adding `static` to the locals in `RTC_SetTime()` to get the zeroing. That does not work, for a reason I had already written down in the note on `static` from a week ago: a static-storage-duration object needs a compile-time constant initializer, and `.Hours = hour` is a function parameter. It would not compile. And if it somehow did, `static` would mean the initializer runs only once, so every call after the first would silently reuse the original time.
+I did briefly consider adding `static` to the locals in `RTC_SetTime()` to get the zeroing. That does not work, for a reason I had already written down in the note on `static` from a week ago: **a static-storage-duration object needs a compile-time constant initializer**, and `.Hours = hour` is a function parameter. It would not compile. And if it somehow did, `static` would mean the initializer runs only once, so every call after the first would silently reuse the original time.
 
 #### Testing
 ```c
-    if (!RTC_IsTimeSet())
-    {
-        Comms_SendResponse("Time not set");
-    }
+if (!RTC_IsTimeSet())
+{
+    Comms_SendResponse("Time not set");
+}
 
-    RTC_SetTime(14, 30);
+RTC_SetTime(14, 30);
 ```
 
 The check comes before the set, so on a genuinely fresh backup domain the host should see the message exactly once. It did:
 
 ```text
-    ---- Opened the serial port COM4 ----
-    Time not set
+---- Opened the serial port COM4 ----
+Time not set
 ```
 
 Then I used "reset the chip and restart debug session" in CubeIDE, and the reset button on the board. Neither produced the message again, which is the point: the calendar survives a system reset. That is the foundation the whole scheduling design rests on.
@@ -539,16 +538,17 @@ Worth being precise about what this does *not* prove. A reset is not a power cyc
 
 #### Reading the calendar back
 ```c
-    RTC_TimeTypeDef t;
-    RTC_DateTypeDef d;
-    HAL_RTC_GetTime(&RTC_Handle, &t, RTC_FORMAT_BIN);
-    HAL_RTC_GetDate(&RTC_Handle, &d, RTC_FORMAT_BIN);
+RTC_TimeTypeDef t;
+RTC_DateTypeDef d;
+HAL_RTC_GetTime(&RTC_Handle, &t, RTC_FORMAT_BIN);
+HAL_RTC_GetDate(&RTC_Handle, &d, RTC_FORMAT_BIN);
 ```
 
 The HAL documents that the second call is not optional:
 
 ```text
-You must call HAL_RTC_GetDate() after HAL_RTC_GetTime() to unlock the values in the higher-order calendar shadow registers... Reading RTC current time locks the values in calendar shadow registers until current date is read.
+You must call HAL_RTC_GetDate() after HAL_RTC_GetTime() to unlock the values in the higher-order calendar shadow registers... 
+Reading RTC current time locks the values in calendar shadow registers until current date is read.
 ```
 
 So even with no interest in the date, it has to be read, or the shadow registers stay latched and the time stops appearing to change.
@@ -557,12 +557,12 @@ So even with no interest in the date, it has to be read, or the shadow registers
 
 #### Two things I ran into while testing
 
-**Locals do not survive the function.** The four lines above went into `init_all()`, which runs once. I could only see `t` and `d` by breaking inside `init_all()` after those lines and before it returns. Breaking anywhere in the `while(1)` loop gave "No symbol d in current context", because the stack frame is long gone by then.
+**Locals do not survive the function.** The four lines above went into `init_all()`, which runs once. I could only see `t` and `d` by putting a breakpoint inside `init_all()` after those lines and before it returns. Putting a breakpoint anywhere in the `while(1)` loop gave "No symbol d in current context", because its stack frame is destroyed once retured from this function.
 
 **The watchdog was starting too early.** The first time I put a breakpoint on the `HAL_RTC_GetDate()` line, CubeIDE reported `Breakpoint installation failed: Connection is shut down`, which I had never seen before.
 
-I do have "Suspend watchdog counters while halted" enabled in the debug configuration, so the immediate cause is still not certain, but looking at `init_all()` I found a real ordering problem regardless. I had called `IWDG_Init()` first, mirroring the control flow diagram -- but that diagram describes the order of the *main loop*, where refreshing the watchdog goes first. Initialization is not the main loop.
+I do have "Suspend watchdog counters while halted" enabled in the debug configuration, so the immediate cause is still not certain, but looking at `init_all()` I found a real ordering problem regardless. I had called `IWDG_Init()` first, mirroring the control flow diagram -- but that diagram describes the order of the *main loop*, where refreshing the watchdog goes first. **Initialization is not the same as main loop.**
 
-`HAL_IWDG_Init()` starts the watchdog immediately, and nothing refreshes it until the main loop begins. Everything between those two points has to finish within the timeout, and `RTC_Init()` sits right in the middle of it, blocking while it waits for the crystal.
+`HAL_IWDG_Init()` starts the watchdog immediately, and nothing refreshes it until the main loop begins. **Everything between those two points has to finish within the timeout**, and `RTC_Init()` sits right in the middle of it, blocking while it waits for the crystal.
 
-So the watchdog should be initialized *last*: it guards the system, and the system should be ready before it is guarded. I moved `IWDG_Init()` to the final line of `init_all()`.
+**So the watchdog should be initialized *last*: it guards the system, and the system should be ready before it is guarded.** I moved `IWDG_Init()` to the last line of `init_all()`.
