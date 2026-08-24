@@ -566,3 +566,59 @@ I do have "Suspend watchdog counters while halted" enabled in the debug configur
 `HAL_IWDG_Init()` starts the watchdog immediately, and nothing refreshes it until the main loop begins. **Everything between those two points has to finish within the timeout**, and `RTC_Init()` sits right in the middle of it, blocking while it waits for the crystal.
 
 **So the watchdog should be initialized *last*: it guards the system, and the system should be ready before it is guarded.** I moved `IWDG_Init()` to the last line of `init_all()`.
+
+### 2026-08-23 -- RTC_CTRL continued
+
+Today I implemented `RTC_SetAlarm` and `RTC_TakeAlarm`.
+
+#### Why the caller picks the slot
+
+`RTC_SetAlarm` takes `RTC_AlarmSlot slot, uint8_t hour, uint8_t minute`, so whoever calls it has to say which of the two alarms it is setting. Seconds are not exposed; they are hard-coded to 0.
+
+The alternative would be to hide the idea of a slot entirely and keep only the two most recent times: set 08:00, 13:00, 18:00 and the firmware silently drops 08:00. That is doable, but it has a problem I did not see at first. Suppose the two times are 08:00 and 18:00 and I want to change 18:00 to 19:00. I send 19:00, and the firmware replaces whichever slot was written longest ago -- which is 08:00. I end up with 18:00 and 19:00. There is no way to edit one time without re-entering both.
+
+I stayed with what the protocol already specifies. The host also arguably *should* know that there are exactly two.
+
+#### How it works
+
+I fill an `RTC_AlarmTypeDef` -- hour, minute, second, the mask settings, and **which alarm it is** -- and hand it to `HAL_RTC_SetAlarm(&RTC_Handle, &alarm, RTC_FORMAT_BIN)`. The HAL takes care of the sequence around it: unlocking write protection, clearing the old flag, waiting on `ALRAWF`, writing `ALRMAR`, re-enabling.
+
+The mask is the part that matters. `RTC_ALARMMASK_DATEWEEKDAY` sets MSK4, which makes the date field "don't care" while hours, minutes and seconds still have to match. That is what turns a one-shot alarm into one that repeats at the same time every day, with nothing to re-arm.
+
+After that the CPU is out of the loop entirely. Hardware compares the calendar against the alarm register every second, and sets `ALRAF` or `ALRBF` in `RTC_ISR` when "the time/date registers (RTC_TR and RTC_DR) match the Alarm A/B register" (RM0390 p.665).
+
+Worth noting that the flags are set by hardware regardless of whether the alarm interrupt is enabled -- the same relationship as `RXNE` and `RXNEIE` on the UART where hardware raises the flag, but whether or not the CPU can hear it and handle it in ISR depends on NVIC. That is why polling works here and I never configured the NVIC for the RTC at all.
+
+#### Why clearing both flags at once is intentional
+
+`RTC_TakeAlarm` checks `ALRAF` and `ALRBF`, and if **either** is set it clears **both** and returns true. In most other peripherals, clearing several flags in one go would be a sign that something is wrong. Here it is the point.
+
+The question to ask is not how many flags were cleared, but whether each flag needs its own separate response. On the UART, every `RXNE` is a different byte, so merging them loses data and is always a bug. Here both flags mean the same thing -- "it is time to feed" -- and the action is identical. Merging them is deduplication, not data loss.
+
+Two cases make that solid.
+
+**Running normally.** Since seconds are fixed at 0, any two alarms the user sets are at least a minute apart, and a feed only takes 5 seconds, so one can never hide the other. Even if the user deliberately sets both alarms to the same time, both flags come up together and the firmware treats it as one feed -- which is correct. A serving is the unit for changing how much comes out; feeding twice at once is not. If the cat needs more, the answer is a longer dispense, not a duplicate alarm.
+
+One side effect of the one-minute floor: an alarm can never collide with another alarm. So the `FEEDING + pending` state in the Feed FSM can only ever be reached by an alarm arriving during a *manual* feed. Setting two alarms close together will not exercise that path -- testing it needs a `FEED` command or a button press first.
+
+**At startup.** This is where the merge really pays off. Per the protocol, however many scheduled feeds were missed while the firmware was not running, exactly one gets made up. In this project the maximum missed is two, since there are only two alarms. A single `bool` with both flags cleared expresses that policy directly, without any counting logic.
+
+#### Calling RTC_TakeAlarm() at the end of RTC_SetTime()
+
+I added a `RTC_TakeAlarm()` call between the last status check and `return true`. The reason took a while to see.
+
+The calendar starts counting as soon as the clock source is running and `RTCEN` is set, well before anything sets the time. `RTC_TR` and `RTC_DR` hold whatever they hold -- all zeros on a fresh backup domain -- and the hardware increments them once per second:
+
+    32768 Hz / ((127 + 1) * (255 + 1)) = 1 Hz
+
+The hardware doesn't know or care whether those numbers mean anything. It just counts, and compares against the alarm register. "Setting the time" is nothing more than writing `RTC_TR` and `RTC_DR`; whether the value is real is purely a software-level idea, and `INITS` is the hint the hardware gives us to decide (it is set when the year field is non-zero).
+
+So what if: the board is powered on, the user sets an alarm for 08:00, but never sets the time. The calendar walks from 00:00:00, and eight hours later it reaches 08:00:00 and `ALRAF` goes up.
+
+No feed happens -- `Schedule` checks `IsTimeSet()` before raising `Feed_Request(FEED_RTC)`, and that guard holds. But the flag is now set and nothing has cleared it.
+
+The problem is the moment the user *does* set the time. `INITS` becomes 1, the guard lifts, and on the next pass `RTC_TakeAlarm()` reads that stale flag and feeds -- executing an 08:00 feed at whatever time it happens to be.
+
+Clearing the flags inside `RTC_SetTime()` fixes it, and the general rule is better than the specific case: **setting the clock rewrites the timeline, so every comparison result from the old one is void.**
+
+This stays at the driver level. The stale flag is not the application's problem to know about; it is the to RTC's own knowledge that a time change invalidates previous matches.
