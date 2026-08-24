@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "stm32f4xx_hal.h"
+#include "RTC_CTRL.h"
 
 /* 32768 Hz / ( (127 + 1) * (255 + 1) ) = 1 Hz -> 1 tick every 1 second
  * 128 and 256 are powers of two, so 128 * 256 = 32768 exactly -- no rounding error */
@@ -95,13 +96,59 @@ bool RTC_SetTime(uint8_t hour, uint8_t minute)
 	return true;
 }
 
-bool RTC_SetAlarm(uint8_t index, uint8_t hour, uint8_t minute)
+bool RTC_SetAlarm(RTC_AlarmSlot slot, uint8_t hour, uint8_t minute)
 {
-	return false;
+	if (hour > RTC_MAX_HOUR || minute > RTC_MAX_MINUTE) return false;
 
+	uint32_t alarm_id;
+
+	switch (slot)
+	{
+		case RTC_SLOT_A:
+			alarm_id = RTC_ALARM_A;
+			break;
+
+		case RTC_SLOT_B:
+			alarm_id = RTC_ALARM_B;
+			break;
+
+		default:
+			return false;
+	}
+
+	RTC_AlarmTypeDef alarm = {
+			.AlarmTime = {
+					.Hours 		 = hour,
+					.Minutes	 = minute,
+					.Seconds 	 = 0
+			},
+			.AlarmMask 			 = RTC_ALARMMASK_DATEWEEKDAY, /* ignore date; hour, minute, second must all match */
+			.AlarmSubSecondMask  = RTC_ALARMSUBSECONDMASK_ALL,
+			.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE,
+			.AlarmDateWeekDay 	 = 1, /* already masked, just put any valid value */
+			.Alarm 				 = alarm_id
+	};
+
+	HAL_StatusTypeDef status = HAL_RTC_SetAlarm(&RTC_Handle, &alarm, RTC_FORMAT_BIN);
+	return status == HAL_OK;
 }
+
 bool RTC_TakeAlarm(void)
 {
-	return false;
+	bool alarm_fire = false;
+
+	if (__HAL_RTC_ALARM_GET_FLAG(&RTC_Handle, RTC_FLAG_ALRAF) == 1U)
+	{
+		__HAL_RTC_ALARM_CLEAR_FLAG(&RTC_Handle, RTC_FLAG_ALRAF);
+		alarm_hit = true;
+	}
+
+	if (__HAL_RTC_ALARM_GET_FLAG(&RTC_Handle, RTC_FLAG_ALRBF) == 1U)
+	{
+		__HAL_RTC_ALARM_CLEAR_FLAG(&RTC_Handle, RTC_FLAG_ALRBF);
+		alarm_hit = true;
+	}
+
+	return alarm_fire;
 
 }
