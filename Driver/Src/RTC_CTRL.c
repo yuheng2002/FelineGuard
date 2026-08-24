@@ -150,6 +150,8 @@ bool RTC_SetTime(uint8_t hour, uint8_t minute)
 	status = HAL_RTC_SetTime(&RTC_Handle, &time, RTC_FORMAT_BIN);
 	if (status != HAL_OK) return false;
 
+
+	/* setting the clock rewrites the timeline, so every comparison result from the old one is void */
 	RTC_TakeAlarm();
 
 	return true;
