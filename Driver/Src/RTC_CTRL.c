@@ -70,32 +70,6 @@ bool RTC_IsTimeSet(void)
 	return __HAL_RTC_IS_CALENDAR_INITIALIZED(&RTC_Handle);
 }
 
-bool RTC_SetTime(uint8_t hour, uint8_t minute)
-{
-	if (hour > RTC_MAX_HOUR || minute > RTC_MAX_MINUTE) return false;
-
-	RTC_DateTypeDef date = {
-			/* WeekDay, Month and Date are irrelevant here; any valid value will do */
-		    .WeekDay = RTC_WEEKDAY_MONDAY,
-		    .Month   = RTC_MONTH_JANUARY,
-		    .Date    = 1,
-			.Year 	 = RTC_DEFAULT_YEAR /* any non-zero value; INITS compares year against 0 */
-	};
-
-	HAL_StatusTypeDef status = HAL_RTC_SetDate(&RTC_Handle, &date, RTC_FORMAT_BIN);
-	if (status != HAL_OK) return false;
-
-	RTC_TimeTypeDef time = {
-			.Hours   = hour,
-			.Minutes = minute,
-			.Seconds = 0, 	/* not necessary for this project */
-	};
-	status = HAL_RTC_SetTime(&RTC_Handle, &time, RTC_FORMAT_BIN);
-	if (status != HAL_OK) return false;
-
-	return true;
-}
-
 bool RTC_SetAlarm(RTC_AlarmSlot slot, uint8_t hour, uint8_t minute)
 {
 	if (hour > RTC_MAX_HOUR || minute > RTC_MAX_MINUTE) return false;
@@ -151,4 +125,32 @@ bool RTC_TakeAlarm(void)
 
 	return alarm_fire;
 
+}
+
+bool RTC_SetTime(uint8_t hour, uint8_t minute)
+{
+	if (hour > RTC_MAX_HOUR || minute > RTC_MAX_MINUTE) return false;
+
+	RTC_DateTypeDef date = {
+			/* WeekDay, Month and Date are irrelevant here; any valid value will do */
+		    .WeekDay = RTC_WEEKDAY_MONDAY,
+		    .Month   = RTC_MONTH_JANUARY,
+		    .Date    = 1,
+			.Year 	 = RTC_DEFAULT_YEAR /* any non-zero value; INITS compares year against 0 */
+	};
+
+	HAL_StatusTypeDef status = HAL_RTC_SetDate(&RTC_Handle, &date, RTC_FORMAT_BIN);
+	if (status != HAL_OK) return false;
+
+	RTC_TimeTypeDef time = {
+			.Hours   = hour,
+			.Minutes = minute,
+			.Seconds = 0, 	/* not necessary for this project */
+	};
+	status = HAL_RTC_SetTime(&RTC_Handle, &time, RTC_FORMAT_BIN);
+	if (status != HAL_OK) return false;
+
+	RTC_TakeAlarm();
+
+	return true;
 }
