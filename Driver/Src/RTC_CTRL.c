@@ -156,3 +156,22 @@ bool RTC_SetTime(uint8_t hour, uint8_t minute)
 
 	return true;
 }
+
+/* Reads the current time of day.
+ *
+ * HAL_RTC_GetDate() is not optional: reading RTC_TR latches the higher-order
+ * calendar shadow registers until RTC_DR is read (RM0390 22.3.6).
+ * Without it the calendar appears frozen on every subsequent read.
+ * The date itself is unused here; the call exists only to release that latch. */
+bool RTC_GetTime(uint8_t *hour, uint8_t *minute)
+{
+    RTC_TimeTypeDef time = {0};
+    RTC_DateTypeDef date = {0};
+
+    if (HAL_RTC_GetTime(&RTC_Handle, &time, RTC_FORMAT_BIN) != HAL_OK) return false;
+    if (HAL_RTC_GetDate(&RTC_Handle, &date, RTC_FORMAT_BIN) != HAL_OK) return false;
+
+    *hour   = time.Hours;
+    *minute = time.Minutes;
+    return true;
+}

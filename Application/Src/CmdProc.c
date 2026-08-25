@@ -16,7 +16,7 @@ static bool is_digit(char c)
 
 /* converts exactly two digit characters into a number
  * e.g. "14" -> 14*/
-static uint8_t two_digits_to_u8(const char *s)
+static uint8_t two_chars_to_u8(const char *s)
 {
 	uint8_t val = (s[0] - '0') * 10 + (s[1] - '0');
 
@@ -31,9 +31,17 @@ static bool parse_hhmm(const char *s, uint8_t *hour, uint8_t *minute)
 	 * e.g. 14:30 where 14 and 30 are both digits in char type */
 	if (!is_digit(s[0]) || !is_digit(s[1]) || s[2] != ':' || !is_digit(s[3]) || !is_digit(s[4])) return false;
 
-	*hour = two_digits_to_u8(&s[0]);
-	*minute = two_digits_to_u8(&s[3]);
+	*hour = two_chars_to_u8(&s[0]);
+	*minute = two_chars_to_u8(&s[3]);
 	return true;
+}
+
+/* the inverse of two_digits_to_u8: writes a 0-99 value as two chars
+ * e.g. 14 -> s[0] = '1', s[1] = '4' */
+static void u8_to_two_chars(uint8_t val, char *s)
+{
+    s[0] = (char)('0' + (val / 10));
+    s[1] = (char)('0' + (val % 10));
 }
 
 void CmdProc_Process(void){
@@ -60,6 +68,29 @@ void CmdProc_Process(void){
 	else if (strcmp(command, "PING") == 0)
 	{
 		Comms_SendResponse("System ready");
+	}
+
+	else if (strcmp(command, "TIME?") == 0)
+	{
+	    char response_buf[6];   /* "hh:mm" + '\0' */
+	    uint8_t hour, minute;
+
+	    if (!RTC_IsTimeSet())
+	    {
+	        Comms_SendResponse("Time not set");
+	    }
+	    else if (!RTC_GetTime(&hour, &minute))
+	    {
+	        Comms_SendResponse("Invalid command");
+	    }
+	    else
+	    {
+	        u8_to_two_chars(hour, &response_buf[0]);
+	        response_buf[2] = ':';
+	        u8_to_two_chars(minute, &response_buf[3]);
+	        response_buf[5] = '\0';
+	        Comms_SendResponse(response_buf);
+	    }
 	}
 
 	/* strcmp checks the entire string (stops until it sees a null-terminator)
