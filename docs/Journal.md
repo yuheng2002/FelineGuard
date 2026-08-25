@@ -553,7 +553,7 @@ Reading RTC current time locks the values in calendar shadow registers until cur
 
 So even with no interest in the date, it has to be read, or the shadow registers stay latched and the time stops appearing to change.
 
-![Expressions view in STM32CubeIDE: Hours 14, Minutes 30, all date fields 1](RTC_time_set.png)
+![Expressions view in STM32CubeIDE: Hours 14, Minutes 30, all date fields 1](<RTC time set.png>)
 
 #### Two things I ran into while testing
 
