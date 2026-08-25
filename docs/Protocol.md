@@ -12,7 +12,7 @@ This document describes the cat feeder protocol: the operations the device suppo
 
 ## 2. Tools and Related Items
 - MCU: STM32F446RE (NUCLEO-F446RE, board version MB1136 C-04)
-- Stepper driver: A4988 carrier (HiLetgo StepStick clone, $R_CS = 0.1 Ω$)
+- Stepper driver: A4988 carrier (HiLetgo StepStick clone, $R_{CS} = 0.1 \text{Ω}$)
 - Motor: STEPPERONLINE NEMA 17 bipolar stepper, 1.8 degrees per step, 2 A per coil, 59 Ncm
 - Motor supply: 12 V, separate from the logic supply (see Section 5.1)
 - A host-side scripting language, e.g. Python, for UART communication
@@ -22,7 +22,7 @@ This document describes the cat feeder protocol: the operations the device suppo
 - STMicroelectronics, *RM0390 Reference Manual: STM32F446xx*
 - STMicroelectronics, *UM1724 User Manual: STM32 Nucleo-64 boards*
 - Allegro MicroSystems, *A4988 Datasheet*
-- Pololu, *A4988 Stepper Motor Driver Carrier* ([product page](https://www.pololu.com/product/1182)) -- documents the $V_ref$ equation; note the sense resistor value differs from the clone used here
+- Pololu, *A4988 Stepper Motor Driver Carrier* ([product page](https://www.pololu.com/product/1182)) -- documents the $V_{ref}$ equation; note the sense resistor value differs from the clone used here
 
 ## 4. Available Operations
 
@@ -99,9 +99,9 @@ Both are development aids, not product features, and are compiled out of a relea
 
 `CRASH` stops the main loop while the device is idle. The watchdog then resets the MCU, and the reset cause is reported on the next boot.
 
-`CRASHFEED` starts a feed and then stops the main loop while the motor is still running. It tests one thing that `CRASH` cannot: that a crash during motor motion still ends with the motor stopped. No firmware runs to stop it — a system reset clears the timer's enable bit and returns the STEP pin to its reset state, which removes the waveform. That is the assumption worth testing on real hardware. The result is checked by watching the motor, not by a report from the firmware.
+`CRASHFEED` starts a feed and then stops the main loop while the motor is still running. It tests one thing that `CRASH` cannot: that a crash during motor motion still ends with the motor stopped. No firmware runs to stop it — a system reset clears the timer's enable bit and returns the STEP pin to its reset state, which removes the waveform. That is the assumption worth testing on real hardware, and it only comes into play because the motor is stopped from the main loop rather than from a timer interrupt (Section 5.5).
 
-Both commands hang the CPU on purpose, so any byte sent between the command and the reset is lost. The host should send a debug command only when the device is idle, and should wait for the boot message before sending anything else.
+Both commands hang the CPU on purpose, so any byte sent between the command and the reset is lost. **The host should send a debug command only when the device is idle, and should wait for the boot message before sending anything else.**
 
 ### 4.3 Button
 
@@ -117,15 +117,13 @@ The alarm registers and the calendar are both in the backup domain. They keep th
 
 This guard matters more than it looks. The calendar counts from 00:00:00 whether or not anyone has set it, so an alarm can genuinely fire on a clock that means nothing. Without the guard the device would feed at an arbitrary time.
 
-**Order of `TIME` and `SCHED`.** The two commands can be sent in any order. Setting the clock does not trigger a feed whose time has already passed. The owner can therefore skip the next scheduled feed by setting the clock to just after it.
+**Order of `TIME` and `SCHED`.** The two commands can be sent in any order. Setting the clock never triggers a feed whose time has already passed — the alarm compares against the calendar as it advances, so moving the clock forward over an alarm time does not fire it. A skipped alarm stays skipped until the next day.
 
-**Missed feed after a reset.** The alarm flag is set by hardware when an alarm triggers and is cleared only by software. It is also in the backup domain, so it survives a reset. If the flag is set when the firmware comes back up, an alarm fired while the firmware was not running, and the device dispenses one serving.
-
-No separate startup check exists for this. The flag is a level rather than a pulse, so the first ordinary pass of the main loop reads it exactly like any other alarm.
+**Missed feed after a reset.** The alarm flag is set by hardware when an alarm triggers and is cleared only by software. It is also in the backup domain, so it survives a reset. If the flag is set when the firmware comes back up, an alarm must have fired while nothing was running to act on it. The device then dispenses one serving.
 
 The flag is a single bit and not a counter, so at most one serving is dispensed no matter how many alarms were missed. This matches the policy: the firmware cannot know whether the owner fed the cat by hand, so it must not replay every missed feed.
 
-The flag is cleared after that feed completes, not before. If the device is reset between the feed and the clear, the same feed is repeated on the next boot. This is deliberate, for the same reason as everywhere else in this document: one extra serving is safer than a missed one.
+The flag is cleared after that feed completes, not before. Clearing it first would open a window between the clear and the feed actually starting, and a reset landing there loses the feed entirely. Clearing it after means a reset between the feed and the clear repeats it instead. Neither ordering is free, and the choice follows the same rule as everywhere else in this document: one extra serving is recoverable, a missed one is not.
 
 > Known limitation: in a repeating reset loop, this repeats on every boot. It is accepted, because a reset loop is a fault the watchdog cannot clear by itself and needs the owner in any case.
 
@@ -162,19 +160,19 @@ The motor is a single shared resource, so only one feed can run at a time. Feed 
 - A **dropped** request is discarded. It is never queued.
 - A **deferred** request is held and runs when the current feed finishes. A scheduled feed is delayed instead of lost, because it is the one source with nobody present to send it again.
 
-Only one scheduled feed can be held at a time. A second one arriving while another is already deferred is dropped. Because seconds are fixed at zero, two alarms are at least a minute apart and a feed lasts five seconds, so an alarm can never collide with another alarm — the deferred state is only ever reached by an alarm arriving during a manual feed.
+Only one scheduled feed can be held at a time. A second one arriving while another is already deferred is dropped. Because seconds are fixed at zero, two alarms are at least a minute apart and a feed lasts five seconds, so theoretically an alarm can never collide with another alarm — the deferred state is only ever reached by an alarm arriving during a manual feed.
 
-![Feed arbitration state machine](Feed_Arbitration_FSM.png)
+![Feed arbitration state machine](Feed Arbitration FSM.png)
 
 "Feeding" here describes the motor as a physical resource, not firmware availability. The firmware never blocks. The main loop keeps running and keeps receiving bytes for the whole duration of a feed.
 
-![Main loop control flow](Control_Flow.png)
+![Main loop control flow](Control Flow.png)
 
 ### 5.4 Feedback on a Dropped Request
 
-Feedback belongs to the source, not to the arbitration rule. A dropped `FEED` is answered with `"Busy feeding"`, because UART has a return path to the host. A dropped button press is ignored silently, because the button has no return path. Giving it one would need a separate output channel, such as a status display.
+Feedback belongs to the source, not to the arbitration rule. A dropped `FEED` is answered with `"Busy feeding"`, because UART has a return path to the host. A dropped button press is ignored silently.
 
-This is why a host-side test can only exercise one of the three sources directly. The button and the schedule are observed by watching the motor.
+The button and the schedule are observed by watching the motor.
 
 ### 5.5 Watchdog Timeout
 
@@ -182,4 +180,4 @@ The independent watchdog (IWDG) timeout is about 1 s. The main loop refreshes it
 
 The IWDG runs off the LSI, an internal RC oscillator specified at 17 to 47 kHz, so "one second" is really somewhere between roughly 0.7 s and 1.9 s. The margin is large enough that this does not matter: nothing in the firmware blocks for more than a few milliseconds, the longest single operation being a UART transmission of about 1.3 ms at 115200 baud. The timeout is set by how quickly the device should recover from a hang, not by any operation it has to tolerate.
 
-Refreshing the watchdog is the main loop's job and only the main loop's. The refresh is the evidence that the supervised code is still running, which is also why the motor is stopped from the main loop rather than from the timer interrupt: interrupts keep firing while the main loop is hung, so an interrupt-driven stop would let a dead system finish a feed and look healthy.
+Refreshing the watchdog is the main loop's job and only the main loop's. The refresh is the evidence that the supervised code is still running, which is also why the motor is stopped from the main loop rather than from the timer interrupt: **interrupts keep firing while the main loop is hung, so an interrupt-driven stop would let a dead system finish a feed and look healthy.**
