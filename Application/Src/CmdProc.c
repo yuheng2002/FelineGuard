@@ -72,14 +72,14 @@ void CmdProc_Process(void){
 
 	else if (strcmp(command, "TIME?") == 0)
 	{
-	    char response_buf[6];   /* "hh:mm" + '\0' */
-	    uint8_t hour, minute;
+	    char response_buf[9];   /* "hh:mm:ss" + '\0' */
+	    uint8_t hour, minute, second;
 
 	    if (!RTC_IsTimeSet())
 	    {
 	        Comms_SendResponse("Time not set");
 	    }
-	    else if (!RTC_GetTime(&hour, &minute))
+	    else if (!RTC_GetTime(&hour, &minute, &second))
 	    {
 	        Comms_SendResponse("Invalid command");
 	    }
@@ -87,8 +87,13 @@ void CmdProc_Process(void){
 	    {
 	        u8_to_two_chars(hour, &response_buf[0]);
 	        response_buf[2] = ':';
+
 	        u8_to_two_chars(minute, &response_buf[3]);
-	        response_buf[5] = '\0';
+	        response_buf[5] = ':';
+
+	        u8_to_two_chars(second, &response_buf[6]);
+	        response_buf[8] = '\0';
+
 	        Comms_SendResponse(response_buf);
 	    }
 	}

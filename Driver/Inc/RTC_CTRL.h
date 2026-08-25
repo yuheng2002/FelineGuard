@@ -24,6 +24,6 @@ bool RTC_SetAlarm(RTC_AlarmSlot slot, uint8_t hour, uint8_t minute);
 bool RTC_TakeAlarm(void);
 bool RTC_SetTime(uint8_t hour, uint8_t minute);
 
-bool RTC_GetTime(uint8_t *hour, uint8_t *minute);
+bool RTC_GetTime(uint8_t *hour, uint8_t *minute, uint8_t *second);
 
 #endif /* INC_RTC_CTRL_H_ */

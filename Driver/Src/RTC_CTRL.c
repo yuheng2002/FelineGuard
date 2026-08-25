@@ -163,7 +163,7 @@ bool RTC_SetTime(uint8_t hour, uint8_t minute)
  * calendar shadow registers until RTC_DR is read (RM0390 22.3.6).
  * Without it the calendar appears frozen on every subsequent read.
  * The date itself is unused here; the call exists only to release that latch. */
-bool RTC_GetTime(uint8_t *hour, uint8_t *minute)
+bool RTC_GetTime(uint8_t *hour, uint8_t *minute, uint8_t *second)
 {
     RTC_TimeTypeDef time = {0};
     RTC_DateTypeDef date = {0};
@@ -173,5 +173,6 @@ bool RTC_GetTime(uint8_t *hour, uint8_t *minute)
 
     *hour   = time.Hours;
     *minute = time.Minutes;
+    *second = time.Seconds;
     return true;
 }
