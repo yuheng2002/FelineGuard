@@ -2,6 +2,7 @@
 #include "Feed.h"
 #include "MOTOR_CTRL.h"
 #include "TIMER.h"
+#include "Comms.h"
 
 #define FEED_TIME_MS   5000
 
@@ -55,10 +56,13 @@ void Feed_Poll(void){
 	/* if neither of above, a feed just completed */
 	MOTOR_Stop();
 	if (curr_state == FEED_STATE_PENDING){
+		Comms_SendResponse("Feed complete");
 		start_feed();
 		curr_state = FEED_STATE_FEEDING;
+		Comms_SendResponse("Deferred feed started");
 	}
 	else if (curr_state == FEED_STATE_FEEDING){
 		curr_state = FEED_STATE_IDLE;
+		Comms_SendResponse("Feed complete");
 	}
 }
