@@ -10,6 +10,7 @@
 #include "Comms.h"
 #include "Button.h"
 #include "RTC_CTRL.h"
+#include "Schedule.h"
 
 void SysTick_Handler(void)
 {
@@ -47,5 +48,6 @@ int main(void)
 		Feed_Poll();
 		CmdProc_Process();
 		Button_Poll();
+		Schedule_Poll();
 	}
 }
