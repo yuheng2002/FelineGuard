@@ -114,13 +114,13 @@ bool RTC_TakeAlarm(void)
 	if (__HAL_RTC_ALARM_GET_FLAG(&RTC_Handle, RTC_FLAG_ALRAF) == 1U)
 	{
 		__HAL_RTC_ALARM_CLEAR_FLAG(&RTC_Handle, RTC_FLAG_ALRAF);
-		alarm_hit = true;
+		alarm_fire = true;
 	}
 
 	if (__HAL_RTC_ALARM_GET_FLAG(&RTC_Handle, RTC_FLAG_ALRBF) == 1U)
 	{
 		__HAL_RTC_ALARM_CLEAR_FLAG(&RTC_Handle, RTC_FLAG_ALRBF);
-		alarm_hit = true;
+		alarm_fire = true;
 	}
 
 	return alarm_fire;
