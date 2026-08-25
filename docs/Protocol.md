@@ -162,11 +162,11 @@ The motor is a single shared resource, so only one feed can run at a time. Feed 
 
 Only one scheduled feed can be held at a time. A second one arriving while another is already deferred is dropped. Because seconds are fixed at zero, two alarms are at least a minute apart and a feed lasts five seconds, so theoretically an alarm can never collide with another alarm — the deferred state is only ever reached by an alarm arriving during a manual feed.
 
-![Feed arbitration state machine](Feed Arbitration FSM.png)
+![Feed arbitration state machine](<Feed Arbitration FSM.png>)
 
 "Feeding" here describes the motor as a physical resource, not firmware availability. The firmware never blocks. The main loop keeps running and keeps receiving bytes for the whole duration of a feed.
 
-![Main loop control flow](Control Flow.png)
+![Main loop control flow](<Control Flow.png>)
 
 ### 5.4 Feedback on a Dropped Request
 
