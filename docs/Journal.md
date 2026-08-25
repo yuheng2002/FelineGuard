@@ -622,3 +622,83 @@ The problem is the moment the user *does* set the time. `INITS` becomes 1, the g
 Clearing the flags inside `RTC_SetTime()` fixes it, and the general rule is better than the specific case: **setting the clock rewrites the timeline, so every comparison result from the old one is void.**
 
 This stays at the driver level. The stale flag is not the application's problem to know about; it is the to RTC's own knowledge that a time change invalidates previous matches.
+
+### 2026-08-24 -- TIME and SCHED
+
+Building on `RTC_CTRL`, today was about supporting the `TIME` and `SCHED` commands in `CmdProc`.
+
+#### String parsing
+
+Parsing strings in C is the part I find most tedious. Everything is a pointer, and the bounds are mine to check -- nothing stops me from reading past the end of the buffer.
+
+What makes it manageable here is that the protocol fixes the format. `TIME hh:mm` and `SCHED A hh:mm` have every character at a known offset, so parsing is a matter of checking a prefix, checking the delimiters, and reading digits at fixed indices. No tokenising, no variable-length fields.
+
+#### strcmp for whole commands, strncmp for prefixes
+
+Commands with no parameters -- `FEED`, `PING` -- are the whole line, so `strcmp` works: it compares until a null terminator and returns **0** on a match. The zero is the part I got wrong the first time. I had assumed a match would give a non-zero "true", and wrote `if (strcmp(command, "FEED"))`, **which inverts every branch and still compiles cleanly.**
+
+Commands with parameters cannot be compared whole, since the tail varies. `strncmp(a, b, n)` compares only the first `n` characters, which is what prefix matching needs. Including the trailing space in the pattern matters: `strncmp(command, "TIME ", 5)` will not match `TIMEX`, whereas comparing only four characters would.
+
+#### Three kinds of failure, and which ones the host gets told about
+
+Implementing these two commands forced changes to the protocol I wrote at the start of the project. I take that as a good sign rather than a bad one -- requirements shift as a system gets built, and a document that never changes usually means nobody is reading it.
+
+Until now every command either returned its own success message or fell through to a single `"Invalid command"`. With parameters there are three distinct failures:
+
+**1. The format is wrong.** 
+`TIME 1a:30`, a missing space, the wrong length. The parser in CmdProc catches this, and `"Invalid command"` is the right answer -- the line genuinely is not a well-formed command.
+
+**2. The format is fine but the values are not.** 
+An hour above 23, a minute above 59. `RTC_CTRL` rejects these. Calling that "Invalid command" would be misleading, because the command *was* valid -- so I added `"Invalid time"`.
+
+That distinction is the point. The two messages lead the user to do different things: one means go check the syntax, the other means the syntax is fine, change the number. This is the same reasoning behind the error codes in PMBus and SMBus, which I have been working with on the DC tester at work. That spec defines a long list of error codes precisely so that a failure tells you *what* failed rather than just *that* something did. It matters more there than here, since that tool is operated by technicians who are not necessarily the people who wrote its firmware.
+
+**3. Everything is valid but the HAL call fails.** 
+`RTC_SetTime` and `RTC_SetAlarm` also return false when the underlying HAL call returns `HAL_ERROR`, `HAL_BUSY` or `HAL_TIMEOUT`. This one gets folded into "Invalid time".
+
+I could distinguish it -- the drivers would return a status enum instead of a bool, and CmdProc would map it to a third message. I chose not to, because there is nothing the user could do with it. Once the LSE is running, a HAL timeout on the RTC means the peripheral or the crystal is broken. A user can fix a malformed command or an out-of-range hour; they cannot fix an oscillator. The honest response would be "the device is faulty", and that is a warranty call, not a retry.
+
+A real product would still want a distinct fault indication somewhere -- a status LED, a log, something the field technician sees. But collapsing it into the user-facing message loses nothing the user could act on.
+
+#### TIME?
+
+Testing the set commands exposed a gap: I had no way to read the clock back. I could confirm that `TIME 14:30` returned `"Time set"`, but not that the calendar actually held 14:30 -- and that is exactly the assertion a host-side test script would need to make.
+
+So I added `TIME?`. **The idea of using a trailing question mark for a query comes from SCPI**, which is the protocol I will be using between host and MCU on the DC tester. Borrowing just that convention keeps the two commands distinct in the text itself, rather than relying on the presence or absence of an argument, and it extends naturally if I ever want `SCHED A?`.
+
+#### Testing
+```text
+---- Opened the serial port COM4 ----
+---- Sent utf8 encoded message: "CRASH\n" ----
+Recovered from crash
+---- Sent utf8 encoded message: "TIME 14:30\n" ----
+Time set
+---- Sent utf8 encoded message: "TIME?\n" ----
+14:30
+---- Sent utf8 encoded message: "SCHED A 14:32\n" ----
+Alarm A set
+Feed complete
+```
+`CRASH` was a regression check. I had moved `IWDG_Init()` from the start of `init_all()` to the end, and while that should not affect the reset-cause reporting, it was cheap to confirm.
+
+#### Making up a missed feed
+
+I set Alarm A to 14:36, then held the reset button down from 14:35 until past 14:36, timing it on my phone. On release, a feed ran.
+
+What I want to be precise about is *why* it ran, because I initially described this to myself as `Schedule_Poll()` "checking whether a feed was missed" -- and there is no such check anywhere in the code. `Schedule_Poll()` does exactly the same two things on every pass: is the clock set, and has an alarm fired.
+
+It works because `ALRAF` is a level, not a pulse. The hardware set it while the CPU was held in reset, nothing cleared it, and the first pass of the main loop after release read it like any other. The make-up feed needs no dedicated startup path at all -- it falls out of the flag being sticky and living in the backup domain.
+
+It also only works for a reset. A power cycle drops the backup domain, `INITS` goes to zero, and the guard in `Schedule_Poll()` correctly refuses to feed on a clock it no longer trusts.
+
+#### On seconds
+
+I had decided early on that seconds do not matter for this project, and that is still true for *setting* the time -- the user should not have to type them, and 14:30 meaning 14:30:00 is the right behaviour.
+
+Reading them back turned out to be a different question. I was timing a reset against my phone to test the missed-feed path, which is both awkward and imprecise, and the reason was that `TIME?` only reported hours and minutes. So I extended it to return `hh:mm:ss`.
+
+#### Power cycle
+
+Pulling the USB cable and reconnecting brought back `Time not set` on the next `TIME?`, as expected. VBAT is tied to VDD on this board, so dropping VDD drops the backup domain: the calendar resets, the year field goes back to 0, and `INITS` reads 0 again.
+
+That completes both branches of the protocol's Section 5.3. A reset preserves the backup domain, so the clock survives and a missed alarm is made up. A power cycle does not, so scheduled feeding suspends itself until `TIME` is sent again rather than acting on a clock it has no reason to trust.
