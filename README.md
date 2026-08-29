@@ -154,6 +154,23 @@ The current limit is set with `V_ref = 8 × I_max × R_cs` — 0.8 V here, givin
 
 The A4988 `EN` input is driven high while idle, so the coils are only energized during a feed rather than dissipating holding current continuously.
 
+## Pin map
+
+| Pin | Signal | Mode | Notes |
+|---|---|---|---|
+| PA0 | STEP to A4988 | AF1 (TIM2_CH1), pull-down | 250 Hz PWM, generated in hardware |
+| PA1 | DIR to A4988 | Output, push-pull | Driven high at init |
+| PA8 | EN to A4988 | Output, push-pull | Active low; high at idle, only low during a feed |
+| PA2 | USART2 TX | AF7, no pull | 115200 8N1 |
+| PA3 | USART2 RX | AF7, no pull | RXNE interrupt per byte |
+| PC13 | User button B1 | Input, pull-up | Active low, RC-debounced on the board, polled |
+
+### A note on probing the UART
+
+PA2 and PA3 are routed to the on-board ST-LINK. UM1724 documents them as CN10 pin 35 and 37, but in the default hardware configuration those header pins are not electrically connected to the MCU — the solder bridges that would connect them are open, and the ones routing the signals to the ST-LINK are closed instead.
+
+> I tried to capture the UART waveform and a logic analyzer on CN10 pin 35 showed nothing, even though the UART was working over the virtual COM port the whole time.
+
 ## Known limitations
 
 - **Dispensing is open loop.** The firmware controls how long the auger turns, not how many grams come out, and it cannot detect a skipped step.
@@ -165,10 +182,10 @@ The A4988 `EN` input is driven high while idle, so the coils are only energized 
 ## Future improvements
 
 - [ ] **Scripted test against a Release build.** Everything under Verification was run by hand on a `Debug` build. A host-side script driving the serial link would make the test repeatable, and running it against `Release` (`-O3`) would catch anything that quietly depends on a missing `volatile` or on debug-build timing.
-- [ ] **Load cell on the auger.** An HX711 would make a serving weight-based rather than time-based, and would let the firmware notice a skipped step instead of assuming none.
-- [ ] **SPI status display.** Would give the button a return path. A dropped button press is currently silent.
 - [ ] **Single supply.** 12V in, with the logic side derived through a regulator, removes the power-up ordering question entirely. The open problem is keeping the on-board ST-LINK usable without back-feeding it.
 - [ ] **Proper motor mount.** The printed enclosure expects heat-set inserts at the motor face, which are not fitted yet.
+- [ ] **Load cell on the auger.** An HX711 would make a serving weight-based rather than time-based, and would let the firmware notice a skipped step instead of assuming none.
+- [ ] **SPI status display.** Would give the button a return path. A dropped button press is currently silent.
 
 ## Building
 
