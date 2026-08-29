@@ -15,7 +15,18 @@ A feed can be triggered three ways — a serial command, a button press, or a da
 - Detects a feed missed while it was down, and makes up **at most one** however many were missed
 - Resets itself if the main loop stops, and reports that on the next boot
 
-## Architecture
+## System overview
+
+Three sources can request a feed. They converge on the MCU, which arbitrates
+between them and drives a single STEP/DIR output through to the auger.
+
+![System signal chain](<docs/System architecture.png>)
+
+The 12 V motor supply reaches the coils only through the A4988 — it never
+touches the logic side. The watchdog relationship is two-way: the main loop
+refreshes it, and it resets the MCU if that stops happening.
+
+## Firmware Architecture
 
 Four layers, with dependencies pointing in one direction only.
 
