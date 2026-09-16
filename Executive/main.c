@@ -12,11 +12,6 @@
 #include "RTC_CTRL.h"
 #include "Schedule.h"
 
-void SysTick_Handler(void)
-{
-	HAL_IncTick();
-}
-
 void init_all(void)
 {
 	HAL_Init();
