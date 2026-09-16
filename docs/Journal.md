@@ -702,3 +702,8 @@ Reading them back turned out to be a different question. I was timing a reset ag
 Pulling the USB cable and reconnecting brought back `Time not set` on the next `TIME?`, as expected. VBAT is tied to VDD on this board, so dropping VDD drops the backup domain: the calendar resets, the year field goes back to 0, and `INITS` reads 0 again.
 
 That completes both branches of the protocol's Section 5.3. A reset preserves the backup domain, so the clock survives and a missed alarm is made up. A power cycle does not, so scheduled feeding suspends itself until `TIME` is sent again rather than acting on a clock it has no reason to trust.
+
+
+### 2026-09-16 -- FreeRTOS environment setup
+
+FreeRTOS needs SysTick, so `HAL_InitTick` is overridden with ST's TIM template `stm32f4xx_hal_timebase_tim_template.c`, located in `STM32Cube_FW_F4_V1.28.3/Drivers/STM32F4xx_HAL_Driver/Src`. The template uses TIM6, which is already used elsewhere in this project, so I changed it to TIM7.
