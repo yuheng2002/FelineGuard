@@ -53,7 +53,7 @@
  * settings.  Your application will certainly need a different value so set this
  * correctly. This is very often, but not always, equal to the main system clock
  * frequency. */
-#define configCPU_CLOCK_HZ    ( ( unsigned long ) 20000000 )
+#define configCPU_CLOCK_HZ    ( ( unsigned long ) 16000000 )
 
 /* configSYSTICK_CLOCK_HZ is an optional parameter for ARM Cortex-M ports only.
  *
@@ -77,7 +77,7 @@
 
 /* configTICK_RATE_HZ sets frequency of the tick interrupt in Hz, normally
  * calculated from the configCPU_CLOCK_HZ value. */
-#define configTICK_RATE_HZ                         100
+#define configTICK_RATE_HZ                         1000
 
 /* Set configUSE_PREEMPTION to 1 to use pre-emptive scheduling.  Set
  * configUSE_PREEMPTION to 0 to use co-operative scheduling.
@@ -89,7 +89,7 @@
  * configUSE_TIME_SLICING to 0 to prevent the scheduler switching between Ready
  * state tasks just because there was a tick interrupt.  See
  * https://freertos.org/single-core-amp-smp-rtos-scheduling.html. */
-#define configUSE_TIME_SLICING                     0
+#define configUSE_TIME_SLICING                     1
 
 /* Set configUSE_PORT_OPTIMISED_TASK_SELECTION to 1 to select the next task to
  * run using an algorithm optimised to the instruction set of the target
@@ -251,7 +251,7 @@
  * FreeRTOS/source/event_groups.c source file must be included in the build if
  * configUSE_EVENT_GROUPS is set to 1. Defaults to 1 if left undefined. */
 
-#define configUSE_EVENT_GROUPS    1
+#define configUSE_EVENT_GROUPS    0
 
 /******************************************************************************/
 /* Stream Buffer related definitions. *****************************************/
@@ -262,7 +262,7 @@
  * FreeRTOS/source/stream_buffer.c source file must be included in the build if
  * configUSE_STREAM_BUFFERS is set to 1. Defaults to 1 if left undefined. */
 
-#define configUSE_STREAM_BUFFERS    1
+#define configUSE_STREAM_BUFFERS    0
 
 /******************************************************************************/
 /* Memory allocation related definitions. *************************************/
@@ -315,7 +315,30 @@
  * switch performing interrupts.  Not supported by all FreeRTOS ports.  See
  * https://www.freertos.org/RTOS-Cortex-M3-M4.html for information specific to
  * ARM Cortex-M devices. */
-#define configKERNEL_INTERRUPT_PRIORITY          0
+/* Cortex-M specific, copied from ST's FreeRTOSConfig.h shipped with
+ * STM32Cube_FW_F4 (Projects/STM32446E_EVAL/Applications/FreeRTOS).
+ * These values must not be zero on Cortex-M: they are written to BASEPRI,
+ * and zero there means "mask nothing". */
+
+#ifdef __NVIC_PRIO_BITS
+    /* __NVIC_PRIO_BITS is defined by CMSIS; 4 on STM32F4. */
+    #define configPRIO_BITS    __NVIC_PRIO_BITS
+#else
+    #define configPRIO_BITS    4
+#endif
+
+/* The lowest interrupt priority that can be used in a call to a "set priority"
+ * function. */
+#define configLIBRARY_LOWEST_INTERRUPT_PRIORITY          0xf
+
+/* The highest interrupt priority that can be used by any interrupt service
+ * routine that makes calls to interrupt safe FreeRTOS API functions.  Do NOT
+ * call interrupt safe FreeRTOS API functions from any interrupt that has a
+ * higher priority than this (a lower numeric value). */
+#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY     5
+
+#define configKERNEL_INTERRUPT_PRIORITY \
+    ( configLIBRARY_LOWEST_INTERRUPT_PRIORITY << ( 8 - configPRIO_BITS ) )
 
 /* configMAX_SYSCALL_INTERRUPT_PRIORITY sets the interrupt priority above which
  * FreeRTOS API calls must not be made.  Interrupts above this priority are
@@ -323,11 +346,12 @@
  * to the highest interrupt priority (0).  Not supported by all FreeRTOS ports.
  * See https://www.freertos.org/RTOS-Cortex-M3-M4.html for information specific
  * to ARM Cortex-M devices. */
-#define configMAX_SYSCALL_INTERRUPT_PRIORITY     0
+#define configMAX_SYSCALL_INTERRUPT_PRIORITY \
+    ( configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << ( 8 - configPRIO_BITS ) )
 
 /* Another name for configMAX_SYSCALL_INTERRUPT_PRIORITY - the name used depends
  * on the FreeRTOS port. */
-#define configMAX_API_CALL_INTERRUPT_PRIORITY    0
+#define configMAX_API_CALL_INTERRUPT_PRIORITY    configMAX_SYSCALL_INTERRUPT_PRIORITY
 
 /******************************************************************************/
 /* Hook and callback function related definitions. ****************************/
@@ -671,5 +695,19 @@
 #define INCLUDE_xTaskAbortDelay                0
 #define INCLUDE_xTaskGetHandle                 0
 #define INCLUDE_xTaskResumeFromISR             1
+
+/******************************************************************************/
+/* Cortex-M interrupt handler names. ******************************************/
+/******************************************************************************/
+
+/* Map the FreeRTOS port handlers to the CMSIS names used in the vector table.
+ * Copied from ST's FreeRTOSConfig.h.
+ *
+ * xPortSysTickHandler is deliberately NOT mapped here. ST's config comments it
+ * out to avoid clashing with the SysTick_Handler defined by STM32Cube, so this
+ * project calls xPortSysTickHandler() from its own SysTick_Handler in main.c
+ * instead. */
+#define vPortSVCHandler       SVC_Handler
+#define xPortPendSVHandler    PendSV_Handler
 
 #endif /* FREERTOS_CONFIG_H */

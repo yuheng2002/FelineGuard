@@ -11,6 +11,23 @@
 #include "Button.h"
 #include "RTC_CTRL.h"
 #include "Schedule.h"
+#include "FreeRTOS.h"
+#include "task.h"
+
+extern void xPortSysTickHandler(void);
+
+void SysTick_Handler(void)
+{
+    xPortSysTickHandler();
+}
+
+/* Callback function freeRTOS uses to deal with stack overflow */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    /* A task overflowed its stack. Break here and read pcTaskName to see which. */
+    taskDISABLE_INTERRUPTS();
+    while (1) { }
+}
 
 void init_all(void)
 {
@@ -25,7 +42,7 @@ void init_all(void)
 		Comms_SendResponse("RTC clock failed to initialize");
 	}
 
-	IWDG_Init();
+	// IWDG_Init();
 }
 
 int main(void)
@@ -37,12 +54,4 @@ int main(void)
 		Comms_SendResponse("Recovered from crash");
 	}
 
-	while (1)
-	{
-		IWDG_Refresh();
-		Feed_Poll();
-		CmdProc_Process();
-		Button_Poll();
-		Schedule_Poll();
-	}
 }
