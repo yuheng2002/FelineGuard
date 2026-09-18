@@ -51,7 +51,6 @@
 									<listOptionValue builtIn="false" value="../Driver/Inc"/>
 									<listOptionValue builtIn="false" value="../CMSIS/Device/ST/STM32F4xx/Include"/>
 									<listOptionValue builtIn="false" value="../HAL/Inc"/>
-									<listOptionValue builtIn="false" value="../Inc"/>
 									<listOptionValue builtIn="false" value="../FreeRTOS/Inc"/>
 								</option>
 								<inputType id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c.1796471751" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.input.c"/>
@@ -131,7 +130,6 @@
 									<listOptionValue builtIn="false" value="STM32F446RETx"/>
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths.1772478035" name="Include paths (-I)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths" useByScannerDiscovery="false" valueType="includePath">
-									<listOptionValue builtIn="false" value="../Inc"/>
 									<listOptionValue builtIn="false" value="../System/Inc"/>
 									<listOptionValue builtIn="false" value="../Driver/Inc"/>
 									<listOptionValue builtIn="false" value="../Application/Inc"/>
