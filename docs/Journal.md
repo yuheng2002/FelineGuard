@@ -707,3 +707,68 @@ That completes both branches of the protocol's Section 5.3. A reset preserves th
 ### 2026-09-16 -- FreeRTOS environment setup
 
 FreeRTOS needs SysTick, so `HAL_InitTick` is overridden with ST's TIM template `stm32f4xx_hal_timebase_tim_template.c`, located in `STM32Cube_FW_F4_V1.28.3/Drivers/STM32F4xx_HAL_Driver/Src`. The template uses TIM6, which is already used elsewhere in this project, so I changed it to TIM7.
+
+### 2026-09-16 -- FreeRTOS environment setup continued
+
+The point of porting this project to FreeRTOS is not that it needs one. It is that I want to learn FreeRTOS, and doing it on firmware I already know means I can compare the two versions directly instead of starting from a blank project.
+
+#### What carries over
+
+All the init calls from v1 are reused unchanged. They only configure peripherals on this micro, and the peripherals do not care how I drive them afterwards.
+
+#### Why an RTOS would be needed
+
+My rough understanding is that an RTOS starts to pay off when a project has far more going on than this one does. All v1 has to do is feed the watchdog, arbitrate feed requests from three sources, and turn the motor on and off. But if there were a hundred things happening at once, a single main loop would get messy fast — everything would have to be written so it never blocks, and every one of those hundred would have to keep that promise.
+
+#### How main changes
+
+In the superloop version the main loop runs over and over, calling each module in sequence. Interrupts can still be used; it just means I have to handle race conditions carefully where an ISR and the main loop touch the same data (or in the ring buffer case in v1 -> get rid of the `size` variable that both the ISR and the main loop can write to).
+
+With FreeRTOS, main's job is different: create the tasks, then call `vTaskStartScheduler()` and **hand over the CPU**. The scheduler runs whichever ready task has the highest priority, and **main never gets control back.**
+
+#### Task states
+
+A task is in one of three states: `Running`, `Ready`, or `Blocked`.
+
+`vTaskDelay(500)` in `blink_task` puts that task into `Blocked` for 500 ticks. Unlike `HAL_Delay(500)`, it does not tie up the CPU. "Blocked" here means the task is stalled, and while it is, the scheduler runs whichever other task is ready with the highest priority.
+
+#### Priority numbers run the other way
+
+Unlike NVIC priorities, where a smaller number means higher priority (`HardFault` sits at -1, above every peripheral interrupt), FreeRTOS task priorities go the opposite direction: a larger number is higher, which feels more natural and intuitive actually. Priority 0 is the lowest, which is where the idle task runs. I guessed this the wrong way round at first, so it is worth writing down — both conventions exist in the same project now.
+
+#### Stacks
+
+Another difference is that the superloop has no concept of tasks at all. It is a regular program of the kind I have been writing since my first programming class: **everything shares one stack, and the flow is whatever the control flow says it is.**
+
+**Under FreeRTOS each task gets its own stack.** The blink task gets 128 words, which is 128 × 4 = 512 bytes, because that is what I passed to `xTaskCreate` — the same number `configMINIMAL_STACK_SIZE` uses for the idle and timer tasks.
+
+That raises two problems I can already imagine.
+
+**One: running out of memory as tasks are added.** The RAM is the same as before, and every new task takes another stack out of it. Eventually the stacks will not fit, unless each one is trimmed to what it actually needs — and even on a micro with more RAM, enough tasks would still exhaust it.
+
+**Two: a task that needs more than its stack.** If I assume 512 bytes and the task actually uses more, it will run off the end and into whatever is next to it in memory. FreeRTOS provides `vApplicationStackOverflowHook` for this: the kernel detects the overflow and calls it, leaving what to do up to the application. All I do here is disable interrupts so the scheduler cannot switch away, and **trap the CPU** in a `while (1)` — **preserve the scene** so I can look at `pcTaskName` and see which task it was.
+
+```c
+/* Callback FreeRTOS calls when it detects a stack overflow */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    /* Break here and read pcTaskName to see which task overflowed. */
+    taskDISABLE_INTERRUPTS();
+    while (1) { }
+}
+```
+
+#### A separate failure: the task never gets created
+
+The hook above catches problem two. Problem one shows up somewhere else entirely, and much earlier.
+
+`xTaskCreate` allocates the stack and the task control block out of the FreeRTOS heap. If there is not enough left, it returns `errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY` instead of `pdPASS`, and **the task simply does not exist**. Nothing crashes; that task just never runs. So the return value is worth checking, otherwise the symptom is "a task that mysteriously does nothing".
+
+```c
+if (xTaskCreate(blink_task, "blink", 128, NULL, 1, NULL) != pdPASS)
+{
+    while (1) { }
+}
+```
+
+Two different problems, then: the stack overflow hook is about a task exceeding the stack it was given, and this check is about the stack never being handed out in the first place.
