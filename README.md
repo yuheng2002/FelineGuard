@@ -4,6 +4,8 @@ Firmware for a stepper-driven cat feeder, built on an STM32F446RE.
 
 A feed can be triggered three ways — a serial command, a button press, or a daily alarm — and all three are arbitrated against a single motor. The firmware never blocks, recovers from a hang on its own, and keeps its schedule across a reset.
 
+> This is the FreeRTOS port. The original superloop version is on the [`main`](../../tree/main) branch — same hardware, same protocol, different execution model.
+
 ![Hardware setup: NUCLEO-F446RE, A4988 carrier on a breadboard, NEMA 17 driving the auger, 12 V supply](<docs/hardware setup.jpg>)
 
 ## What it does
