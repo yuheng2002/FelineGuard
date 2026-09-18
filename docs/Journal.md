@@ -1,3 +1,6 @@
+<details>
+<summary><strong>Superloop version (v1)</strong> — 2026-08-02 to 2026-08-24, click to expand</summary>
+
 ### 2026-08-02 -- Blink LD2 to verify the HAL GPIO path
 
 First code on the board: a blocking blink of the on-board LED, to check that the project builds, flashes and runs.
@@ -703,6 +706,9 @@ Pulling the USB cable and reconnecting brought back `Time not set` on the next `
 
 That completes both branches of the protocol's Section 5.3. A reset preserves the backup domain, so the clock survives and a missed alarm is made up. A power cycle does not, so scheduled feeding suspends itself until `TIME` is sent again rather than acting on a clock it has no reason to trust.
 
+</details>
+
+---
 
 ### 2026-09-16 -- FreeRTOS environment setup
 
