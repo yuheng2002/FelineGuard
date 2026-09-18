@@ -83,7 +83,10 @@ int main(void)
      *
      * This only registers the task. Nothing runs until the scheduler starts.
      */
-    xTaskCreate(blink_task, "blink", 128, NULL, 1, NULL);
+    if (xTaskCreate(blink_task, "blink", 128, NULL, 1, NULL) != pdPASS)
+    {
+        while (1) { }
+    }
 
     /* 1. creates the idle task (priority 0)
      * 2. creates the timer task, because configUSE_TIMERS is 1
