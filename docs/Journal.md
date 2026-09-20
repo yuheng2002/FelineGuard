@@ -842,3 +842,5 @@ Both tasks were created with 256 words:
 So 128 words is safe for both, with more than double the headroom. Worth noting this was measured on the Debug build at `-O0`; `-Os` should use less, so this is the conservative side.
 
 I most likely do not need to save RAM in this project. But I can picture one with enough tasks that knowing the real number, rather than guessing generously, is what makes everything fit.
+
+### 2026-09-20 -- Port Feed module to FreeRTOS

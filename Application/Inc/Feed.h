@@ -9,7 +9,8 @@ typedef enum{
 	FEED_RTC
 }Feed_Source;
 
+void Feed_Init(void);
+void Feed_Task(void *arg);
 bool Feed_Request(Feed_Source src);
-void Feed_Poll(void);
 
 #endif /* INC_FEED_H_ */

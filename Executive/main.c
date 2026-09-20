@@ -35,8 +35,8 @@ void init_all(void)
 
 	UART_Init();
 	Comms_Init();
+	Feed_Init();
 	MOTOR_Init();
-	TIMER_Init();
 	Button_Init();
 	if (!RTC_Init())
 	{
@@ -62,6 +62,13 @@ int main(void)
     }
 
     if (xTaskCreate(CmdProc_Task, "cmdproc", 128, NULL, 1, NULL) != pdPASS)
+    {
+        while (1) { }
+    }
+
+    /* Feed only wakes up to stop the motor, so it does not need to be urgent.
+     * It does need to not be starved, which priority 1 alongside CmdProc gives. */
+    if (xTaskCreate(Feed_Task, "feed", 256, NULL, 1, NULL) != pdPASS)
     {
         while (1) { }
     }

@@ -5,21 +5,33 @@
 #include "UART_CTRL.h"
 #include "FreeRTOS.h"
 #include "queue.h"
-#include "task.h"
+#include "semphr.h"
 
 #define COMMAND_LINE_MAX    16 /* longest command is "SCHED A 08:00" = 13 chars */
 
+/* 1 is enough for now.
+ *
+ * If CmdProc is still busy, Comms blocks on the send but bytes keep arriving into the receive queue meanwhile,
+ * because that one is filled by the ISR. Nothing is lost, the assembler just waits. */
 #define LINE_QUEUE_LENGTH   1
 
 /* Holds completed command lines, one per slot. */
 static QueueHandle_t line_queue;
+
+/* Guards the UART transmitter.
+ *
+ * HAL_UART_Transmit() waits on TXE and writes DR one byte at a time, so two tasks sending at once would interleave their characters.
+ * In v1 only the main loop ever sent anything; now CmdProc and Feed both do. */
+static SemaphoreHandle_t tx_mutex;
 
 /* Creates the line queue.
  *
  * Called from init_all(), before the scheduler starts, so that the queue exists no matter which of the two tasks runs first. */
 void Comms_Init(void){
 	line_queue = xQueueCreate(LINE_QUEUE_LENGTH, COMMS_LINE_BUF_SIZE);
-	if (line_queue == NULL)
+	tx_mutex   = xSemaphoreCreateMutex();
+
+	if (line_queue == NULL || tx_mutex == NULL)
 	{
 		/* Not enough room in the FreeRTOS heap. */
 		while (1) { }
@@ -103,7 +115,14 @@ void Comms_GetCommand(char *out){
 	xQueueReceive(line_queue, out, portMAX_DELAY);
 }
 
-void Comms_SendResponse(const char* response){
+/* Sends one response line.
+ *
+ * The text and its terminator go out as one unit, so a response from another task cannot appear in the middle of this one. */
+void Comms_SendResponse(const char *response){
+	xSemaphoreTake(tx_mutex, portMAX_DELAY);
+
 	UART_Write((const uint8_t *)response, (uint16_t)strlen(response));
 	UART_Write((const uint8_t *)"\n", 1);
+
+	xSemaphoreGive(tx_mutex);
 }
