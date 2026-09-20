@@ -133,7 +133,7 @@ HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 6, 0);
 HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
 ```
 
-The enable bit and the NVIC are set once at init. The flag is the part that has to be dealt with at run time, on every interrupt.
+The enable bit and the NVIC are set once at init. The flag is the part that has to be dealt with at runtime, on every interrupt.
 
 **How the flag gets cleared differs between peripherals.** For UART, reading the data register clears `RXNE` as a side effect, so handling the byte and clearing the flag are the same action. TIM has no such side effect: `UIF` must be cleared explicitly at the top of `TIM6_DAC_IRQHandler`. Forgetting it means the flag is still set when the handler returns, the interrupt fires again immediately, and the main loop never runs again -- the same failure mode as leaving `ORE` set.
 
@@ -714,7 +714,7 @@ That completes both branches of the protocol's Section 5.3. A reset preserves th
 
 FreeRTOS needs SysTick, so `HAL_InitTick` is overridden with ST's TIM template `stm32f4xx_hal_timebase_tim_template.c`, located in `STM32Cube_FW_F4_V1.28.3/Drivers/STM32F4xx_HAL_Driver/Src`. The template uses TIM6, which is already used elsewhere in this project, so I changed it to TIM7.
 
-### 2026-09-16 -- FreeRTOS environment setup continued
+### 2026-09-17 -- FreeRTOS environment setup continued
 
 The point of porting this project to FreeRTOS is not that it needs one. It is that I want to learn FreeRTOS, and doing it on firmware I already know means I can compare the two versions directly instead of starting from a blank project.
 
@@ -778,3 +778,67 @@ if (xTaskCreate(blink_task, "blink", 128, NULL, 1, NULL) != pdPASS)
 ```
 
 Two different problems, then: the stack overflow hook is about a task exceeding the stack it was given, and this check is about the stack never being handed out in the first place.
+
+### 2026-09-19 -- Port the UART path to FreeRTOS tasks and queues
+
+Today I ported the communication modules to FreeRTOS.
+
+#### The ring buffer becomes a queue
+
+The first change is that `rx_queue` (the ring buffer in v1) is now a FreeRTOS queue, written by `xQueueSendFromISR` in the UART ISR and read by `xQueueReceive` inside `Comms_Task`.
+
+Both of those are just functions — one called from an interrupt, one called from a task. The task is `Comms_Task`, and it is the thing that never returns: it is always Running, Ready or Blocked.
+
+The third argument to `xQueueReceive` is `portMAX_DELAY`, meaning there is no timeout. If the queue is empty the calling task waits indefinitely.
+
+#### Does this actually improve anything
+
+Yes, though not enough to matter in this project, since it only has a handful of tasks. But the idea stands.
+
+In v1, every pass of the main loop calls `Comms_PollCommand()`, which drains the ring buffer and returns `NULL` when there is nothing there. Those cycles are wasted. It does not affect this project, where there is far more CPU resources than it needs, but the waste is real.
+
+Under FreeRTOS, a task blocked on `xQueueReceive` is taken off the ready list entirely. The scheduler does not consider it at all, so the CPU goes to whoever else is runnable instead of constantly coming back to check.
+
+#### How does the ISR know which task to wake
+
+This is the part I had to think through. It is not that `Comms` talks to the ISR directly — that would defeat the layering.
+
+In v1 I had a `ring_buffer` struct with `front`, `rear` and a 33-element array. A FreeRTOS queue has all of that plus one more thing: **a list of who is waiting on it**. That list belongs to the queue, not to either function.
+
+So the sequence is:
+
+1. `Comms_Task` calls `xQueueReceive` and the queue is empty
+2. Inside that call, FreeRTOS puts `Comms_Task` on the queue's waiting list and takes it off the ready list
+3. `Comms_Task` stops there, with its stack frame and locals untouched
+4. A byte arrives; the ISR calls `xQueueSendFromISR`
+5. Inside *that* call, FreeRTOS stores the byte, **checks the queue's waiting list, finds `Comms_Task` on it, and moves it back to the ready list**
+6. The scheduler picks it up, and `xQueueReceive` returns from where it stopped
+
+The notifying is **done by whoever makes the condition true**. The queue is the middle ground where the two sides register their interest — **neither side needs to know the other exists.**
+
+---
+
+### Two ways a task can run out of stack
+
+As mentioned in notes from `2026-09-17`, I had already pictured two failure cases: the RAM running out as more tasks are added, and an individual task being given less stack than it actually needs at runtime.
+
+I assumed that checking the return value of `xTaskCreate` would cover the second one. It only covers the first.
+
+`xTaskCreate` does one thing: it tries to carve the requested number of words out of the FreeRTOS heap. Either there is room or there is not. It has no way of knowing how much stack the task will actually use once it starts running — that depends on the call depth and the locals, none of which exist yet.
+
+So I could create a task with 128 words while there is plenty of heap left, and still have that task need 1280 words at runtime. It would run off the end of its own stack and into whatever is next to it in memory.
+
+#### Measuring instead of guessing
+
+`uxTaskGetStackHighWaterMark(NULL)` returns how many words are left in the calling task's stack, measured at its deepest point so far.
+
+I added one for each task and tried different (both valid and invalid) commands: `PING`, `HELLO`, `TIME?`, `TIME 14:30`, `TIME 1a:30`, `TIME 99:99`, `SCHED A 08:00`, `SCHED B 18:00`, `SCHED X 08:00`, `SCHEDULEAVERYLONGCOMMANDLINE`, and `FEED` twice. Then I suspended the debugger and read the two values.
+
+Both tasks were created with 256 words:
+
+- `Comms_Task` had **205** left, so it peaked at **51 words**
+- `CmdProc_Task` had **201** left, so it peaked at **55 words**
+
+So 128 words is safe for both, with more than double the headroom. Worth noting this was measured on the Debug build at `-O0`; `-Os` should use less, so this is the conservative side.
+
+I most likely do not need to save RAM in this project. But I can picture one with enough tasks that knowing the real number, rather than guessing generously, is what makes everything fit.
