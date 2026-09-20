@@ -3,23 +3,35 @@
 #include <string.h>
 #include "Comms.h"
 #include "UART_CTRL.h"
+#include "FreeRTOS.h"
+#include "queue.h"
+#include "task.h"
 
 #define COMMAND_LINE_MAX    16 /* longest command is "SCHED A 08:00" = 13 chars */
 
-/* `static` gives these internal linkage: no other file can refer to them by name.
- * Comms_Poll_Command still hands out the address of command_line,
- * so callers can read it -- but the return type is `const char *`, so they cannot write to it,
- * and they cannot touch the index or the discarding flag at all. */
-static char command_line[COMMAND_LINE_MAX + 1]; /* plus 1 to reserve room for null-terminator */
-static uint8_t command_line_idx;
-static bool discarding;
+#define LINE_QUEUE_LENGTH   1
 
+/* Holds completed command lines, one per slot. */
+static QueueHandle_t line_queue;
 
-/* ---------- Assembles incoming bytes into one command line. ----------
+/* Creates the line queue.
  *
- * Returns a pointer to the completed line on '\n',
- * or NULL if no full line is available yet.
- * Whatever is left in the ring buffer stays there for the next pass.
+ * Called from init_all(), before the scheduler starts, so that the queue exists no matter which of the two tasks runs first. */
+void Comms_Init(void){
+	line_queue = xQueueCreate(LINE_QUEUE_LENGTH, COMMS_LINE_BUF_SIZE);
+	if (line_queue == NULL)
+	{
+		/* Not enough room in the FreeRTOS heap. */
+		while (1) { }
+	}
+}
+
+static UBaseType_t comms_stack_left;   /* TODO: diagnostic, remove when done */
+
+/* ---------- Assembles incoming bytes into command lines. ----------
+ *
+ * Runs as a task. It blocks in UART_ReadByte() until a byte arrives.
+ * When it sees a '\n', it sends the finished line to the line queue instead of returning it the way v1 did.
  *
  * '\r' is dropped, so both "\r\n" and "\n" terminators work.
  * An empty line is ignored.
@@ -27,15 +39,21 @@ static bool discarding;
  * so a 17th data byte means the line is too long:
  * the rest of it is discarded up to the next '\n', per Protocol section 4.5.
  *
- * The returned pointer is valid until the next call. */
-const char* Comms_PollCommand(void){
+ * In v1 the index and the discarding flag had to be `static`, because the function returned after every byte and the state had to survive.
+ * This one never returns, so they are ordinary locals living on the task's stack. */
+void Comms_Task(void *arg){
+	char    command_line[COMMS_LINE_BUF_SIZE];
+	uint8_t command_line_idx = 0;
+	bool    discarding = false;
 	uint8_t byte;
 
-	/* UART_CTRL_ReadByte does two things simultaneously
-	 * 1. returns false if receive buffer is empty,
-	 * 2. or returns true if a byte is loaded from the receive buffer to the passed in buffer */
-	while (UART_ReadByte(&byte))
+	while (1)
 	{
+		/* Blocks here until the ISR puts a byte in the receive queue. */
+		UART_ReadByte(&byte);
+
+		comms_stack_left = uxTaskGetStackHighWaterMark(NULL);   /* TODO: diagnostic */
+
 		if (discarding)
 		{
 			if (byte == '\n'){
@@ -55,9 +73,13 @@ const char* Comms_PollCommand(void){
 				if (command_line_idx != 0){
 					command_line[command_line_idx] = '\0';
 					command_line_idx = 0; /* reset index ptr */
-					return command_line;
+
+					/* Hand the line to CmdProc.
+					 * This only blocks when the queue is already full, which means CmdProc has not finished the previous line yet.
+					 * Waiting here is safe: the ISR keeps filling rx_queue, so no incoming bytes are lost. */
+					xQueueSend(line_queue, command_line, portMAX_DELAY);
 				}
-				break;   /* the return above is conditional; an empty line falls through to here */
+				break;   /* the send above is conditional; an empty line falls through to here */
 
 			default:
 				if (command_line_idx < COMMAND_LINE_MAX){
@@ -65,15 +87,20 @@ const char* Comms_PollCommand(void){
 					command_line_idx++;
 				}else{
 					discarding = true;   /* index 16 is reserved for '\0',
-											so there is no room for a 17th data byte,
-											the line is over length */
+										    so there is no room for a 17th data byte,
+										    the line is over length */
 				}
 
 				break;
 		}
 	}
+}
 
-	return NULL;
+/* Copies the next completed command line into the caller's buffer.
+ *
+ * Blocks until one is available. `out` must point to at least COMMS_LINE_BUF_SIZE bytes. */
+void Comms_GetCommand(char *out){
+	xQueueReceive(line_queue, out, portMAX_DELAY);
 }
 
 void Comms_SendResponse(const char* response){

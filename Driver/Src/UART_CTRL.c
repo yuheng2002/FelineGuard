@@ -2,6 +2,12 @@
 #include "stm32f4xx_hal.h" /* this includes the entire HAL */
 #include "board.h"
 #include "UART_CTRL.h"
+#include "FreeRTOS.h"
+#include "queue.h"
+
+/* Length of the receive queue, in bytes.
+ * Same size as the ring buffer it replaces: enough to hold a second command while the first is being handled. */
+#define RX_QUEUE_LENGTH		32
 
 /* declared static so they are explicitly only visible to this file */
 static UART_HandleTypeDef USART2_Handle = {
@@ -18,13 +24,8 @@ static UART_HandleTypeDef USART2_Handle = {
 		/* rest will be default settings */
 };
 
-static ring_buffer receive_buf = {
-		.front  = 0,
-		.rear   = 0
-};
-
-/* Physical size of receive buffer */
-static const uint8_t rcvf_buf_cap = (uint8_t)sizeof(receive_buf.buffer);
+/* Replaces the hand-written ring buffer from v1 */
+static QueueHandle_t rx_queue;
 
 /* HAL_UART_Init() configures the specific UART bus and general specs such as BaudRate, WordLength...
  * But it does not configure pins, so this function does it */
@@ -56,36 +57,33 @@ void UART_Init(void){
 	/* 3. UART Init */
 	HAL_UART_Init(&USART2_Handle);
 
-	/* 4. enable ISR & NVIC */
+	/* 4. create the receive queue.
+	 * This has to happen before the interrupt is enabled: the ISR writes to rx_queue,
+	 * and the first byte can arrive the moment the NVIC line goes live. */
+	rx_queue = xQueueCreate(RX_QUEUE_LENGTH, sizeof(uint8_t));
+	if (rx_queue == NULL)
+	{
+		/* Not enough room in the FreeRTOS heap. Nothing below would work. */
+		while (1) { }
+	}
+
+	/* 5. enable ISR & NVIC */
 	__HAL_UART_ENABLE_IT(&USART2_Handle, UART_IT_RXNE);
 	HAL_NVIC_SetPriority(USART2_IRQn, PRIO_USART2, 0);
 	HAL_NVIC_EnableIRQ(USART2_IRQn);
 }
 
-/* pass data to comms buffer */
-bool UART_ReadByte(uint8_t *out){
-	/* check if buffer is empty */
-	if (receive_buf.front == receive_buf.rear){
-		return false;
-	}
-
-	*out = receive_buf.buffer[receive_buf.front];
-	receive_buf.front = (receive_buf.front + 1) % rcvf_buf_cap;
-	return true;
+/* Takes one byte out of the receive queue.
+ *
+ * Blocks until a byte is available -- portMAX_DELAY means there is no timeout.
+ * While blocked this task is removed from the ready list entirely,
+ * so the CPU goes to whoever else is ready rather than spinning on an empty buffer. */
+void UART_ReadByte(uint8_t *out){
+	xQueueReceive(rx_queue, out, portMAX_DELAY);
 }
 
 void UART_Write(const uint8_t *data, uint16_t len){
 	HAL_UART_Transmit(&USART2_Handle, data, len, HAL_MAX_DELAY);
-}
-
-static bool ringBufIsFull(ring_buffer *ring_buf){
-	uint8_t front = ring_buf->front;
-	uint8_t rear = ring_buf->rear;
-	if ((rear + 1) % (rcvf_buf_cap) == front){
-		return true;
-	}
-
-	return false;
 }
 
 void USART2_IRQHandler(void){
@@ -98,18 +96,12 @@ void USART2_IRQHandler(void){
 
 		/* valid data */
 		if (sr & USART_SR_RXNE){
-			/* drop byte if buffer if full to prevent corruption */
-			if (!ringBufIsFull(&receive_buf)){
-				/* NOTE: must write first then advance rear
-				 * rear points to the next available index */
-				receive_buf.buffer[receive_buf.rear] = data;
-				receive_buf.rear = (receive_buf.rear + 1) % rcvf_buf_cap;
-			}
+			/* FromISR version: an ISR cannot block, so a full queue drops the byte. */
+			xQueueSendFromISR(rx_queue, &data, NULL);
 		}
 
-		/* When ORE is set, the byte already in DR is still valid (RM0390: "the RDR
-		 * register content will not be lost"). The byte that was waiting in the shift
-		 * register is the one lost, overwritten by whatever arrives next. Reading DR
-		 * above clears both flags, so nothing more to do here. */
+		/* When ORE is set, the byte already in DR is still valid (RM0390: "the RDR register content will not be lost").
+		 * The byte that was waiting in the shift register is the one lost, overwritten by whatever arrives next.
+		 * Reading DR above clears both flags, so nothing more to do here. */
 	}
 }

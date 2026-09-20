@@ -4,6 +4,8 @@
 #include "Comms.h"
 #include "Feed.h"
 #include "RTC_CTRL.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 /* ---------- helper functions ---------- */
 
@@ -44,16 +46,24 @@ static void u8_to_two_chars(uint8_t val, char *s)
     s[1] = (char)('0' + (val % 10));
 }
 
-void CmdProc_Process(void){
-	const char *command = Comms_PollCommand();
+static UBaseType_t cmdproc_stack_left;   /* TODO: diagnostic, remove when done */
 
-	if (!command) return;
 
+/* Runs as a task. Blocks in Comms_GetCommand() until a complete line is available, then matches it against the supported commands.
+ *
+ * `command` is this task's own copy: the queue hands over a copy of the line, so Comms is free to start assembling the next one straight away. */
+void CmdProc_Task(void *arg){
+	char command[COMMS_LINE_BUF_SIZE];
 	uint8_t hour;
 	uint8_t minute;
 
-	/* strcmp() takes in two char pointers
-	 * returns 0 if strings are identical */
+	while (1)
+	{
+	Comms_GetCommand(command);
+
+	cmdproc_stack_left = uxTaskGetStackHighWaterMark(NULL);   /* TODO: diagnostic */
+
+	/* strcmp() takes in two char pointers, returns 0 if strings are identical */
 	if (strcmp(command, "FEED") == 0)
 	{
 		if (!Feed_Request(FEED_CMD))
@@ -157,5 +167,6 @@ void CmdProc_Process(void){
 	else
 	{
 		Comms_SendResponse("Invalid command");
+	}
 	}
 }
