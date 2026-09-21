@@ -843,4 +843,68 @@ So 128 words is safe for both, with more than double the headroom. Worth noting 
 
 I most likely do not need to save RAM in this project. But I can picture one with enough tasks that knowing the real number, rather than guessing generously, is what makes everything fit.
 
-### 2026-09-20 -- Port Feed module to FreeRTOS
+### 2026-09-20 -- Port Feed to FreeRTOS
+
+#### What changes when the sources become tasks
+
+The recurring difference between v1 and v2 is that a sequence becomes a set of tasks.
+
+In the superloop, ordering is guaranteed by the control flow of the main loop. Without interrupts, everything happens exactly in the order I wrote it. With interrupts, the races that appear can be handled either by designing the shared write away -- which is what dropping the `size` variable from the ring buffer did -- or by masking interrupts around a critical section.
+
+Now each feed source is its own task. **All three can request a feed at any time, and arbitrating between them is Feed's job**, which is one of the things this project is built around. **But what if a source requests a feed, and between Feed starting the motor and updating its state, another request arrives?** The scheduler runs whichever ready task has the highest priority at that moment, and it can switch between any two instructions.
+
+#### Masking interrupts is not the same as a mutex
+
+I confused these at first.
+
+`taskENTER_CRITICAL()` masks all interrupts, like `__disable_irq()`. Nothing at all can interfere -- no task, no ISR.
+
+A mutex is narrower. **It only blocks tasks that want the same mutex**. Interrupts keep running, and unrelated tasks keep running. The analogy I had was three of us wanting to go through a door only one person fits through: any of us can go first, but the others have to wait until whoever went is completely through.
+
+The cost of that narrowness is that a mutex can only be used between tasks. An ISR cannot take one, because taking might block and an ISR has no task context to suspend.
+
+#### What the mutex actually covers
+
+This is the part I had wrong. The mutex does not stay held for the duration of a feed. **It covers only the few lines that read and write `curr_state` -- microseconds**. During the five seconds the motor is actually running, nobody holds it.
+
+That matters for the behaviour: if it were held the whole time, a `FEED` sent during a feed would sit blocked in `xSemaphoreTake` for five seconds instead of coming straight back with `Busy feeding`. The arbitration would stop working.
+
+The rule is to **hold a mutex for as little as possible -- just long enough that the read, the decision and the write cannot be split.**
+
+#### The semaphore is a separate thing
+
+`Feed` still needs to know when a feed has started, so it can time it. That is a signal, not a lock, and it is the same problem as the ISR telling `Comms_Task` a byte has arrived, from yesterday's notes.
+
+- `state_mutex` protects `curr_state`. Taken and given by the same task, around a short block.
+- `feed_started` tells `Feed_Task` to start counting. Given by whichever source accepted the request, taken by `Feed_Task`.
+
+The way to tell them apart in the code is who calls what: if the same task takes and gives, it is a lock; if one task gives and another takes, it is a signal.
+
+#### The UART needs a mutex too
+
+`Feed` and `CmdProc` are both tasks, and both send over UART. Feed sends `"Feed complete"` and `"Deferred feed started"`; CmdProc sends `"Busy feeding"`, `"Feeding started"` and so on.
+
+Two tasks, one shared resource -- `HAL_UART_Transmit` writes the data register one byte at a time, so without a mutex the output can interleave:
+
+Feed wants to send `"Feed complete"` while CmdProc wants `"System ready"`, and what comes out could be `"Feed cSystomplem readyte"`.
+
+This is not something v1 could run into, because only the main loop ever sent anything. It is a cost that arrives with the second task that talks, not with Feed specifically.
+
+#### SysTick, the HAL tick, and which timer ended up where
+
+**`SysTick` is a timer in the ARM core itself.** Every Cortex-M has one, regardless of who made the chip. **`TIM6` and `TIM7` are ST peripherals**; another vendor's Cortex-M would not have them.
+
+In v1, `HAL_Init()` configures SysTick for a 1 ms interrupt, and the `SysTick_Handler` in `main.c` calls `HAL_IncTick()`. That counter is what every HAL timeout is measured against -- `HAL_TIMEOUT` comes from comparing the current tick against the tick when the operation started. Code has no way of knowing how much real time has passed without a hardware timer behind it.
+
+In v2, FreeRTOS wants SysTick for its own scheduler tick. So the HAL tick has to move, and ST foresaw this scenario: `HAL_InitTick()` is declared `__weak`, so overriding it is enough to put the HAL tick on TIM7 instead.
+
+Counting what each version actually uses:
+
+| | v1 | v2 |
+|---|---|---|
+| SysTick | HAL tick | FreeRTOS tick |
+| TIM7 | — | HAL tick |
+| TIM6 | timing a feed | — |
+| TIM2 | motor PWM | motor PWM |
+
+The same three timers either way. Deleting the TIMER module did not free a peripheral; it paid back what FreeRTOS took. What it did buy is that timing a feed is no longer a module at all -- three files, an ISR and two volatile variables became one `vTaskDelay`.
