@@ -908,3 +908,29 @@ Counting what each version actually uses:
 | TIM2 | motor PWM | motor PWM |
 
 The same three timers either way. Deleting the TIMER module did not free a peripheral; it paid back what FreeRTOS took. What it did buy is that timing a feed is no longer a module at all -- three files, an ISR and two volatile variables became one `vTaskDelay`.
+
+### 2026-09-20 -- Port Button and Schedule to tasks
+
+Porting Button and Schedule to FreeRTOS. Nothing dramatic: define `Button_Task` and `Schedule_Task` in their own files, and call `xTaskCreate` for each in main, and scheduler takes care of the rest.
+
+#### RAM, stack, and the FreeRTOS heap
+
+I changed `configTOTAL_HEAP_SIZE` from 4096 to 8192 in `FreeRTOSConfig.h`, and this is a good place to break down three terms I kept mixing up.
+
+**RAM** is the MCU's memory, the counterpart to Flash. On this STM32F446RE it is 128 KB.
+
+**The stack** is one region inside RAM. `main()` and every ISR use it, whether or not FreeRTOS is used.
+
+**The FreeRTOS heap** is another region inside RAM — a single array that FreeRTOS carves task stacks, queues and mutexes out of. `configTOTAL_HEAP_SIZE` is its size.
+
+The reason this matters: FreeRTOS does not get all of RAM. The heap sits alongside the main stack and global data, all of it in the same 128 KB. I am making the heap bigger because there are more tasks to create now, and there is plenty of RAM to spare — the two 128-word tasks plus the three 256-word ones still leave most of it free.
+
+#### How often should a task wake
+
+The question that comes with every polling task is **how often it should run.** A task never returns; it is only ever `Running`, `Ready` or `Blocked`. So the pattern is: **do a little work, then sleep, which hands the CPU back.**
+
+For the button: a person pressing and releasing takes tens to hundreds of milliseconds, never microseconds. So sampling every 20 ms is fast enough that no press slips between two samples. `Button_Task` checks the pin once, then sleeps with `vTaskDelay(pdMS_TO_TICKS(BUTTON_POLL_MS))`, where `BUTTON_POLL_MS` is 20.
+
+For the schedule: the calendar only increments once a second, so checking once a second finds everything there is to find. The check itself is a few instructions — microseconds — and then the task sleeps for a second.
+
+The key point about that sleep: `vTaskDelay` puts the task into the `Blocked` state, but it does not block the CPU. While this task sleeps, the scheduler runs whoever else is ready. **The work takes microseconds; the sleep gives the remaining time to everyone else.**
