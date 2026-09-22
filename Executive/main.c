@@ -5,7 +5,6 @@
 #include "MOTOR_CTRL.h"
 #include "Feed.h"
 #include "CmdProc.h"
-#include "TIMER.h"
 #include "IWDG_CTRL.h"
 #include "Comms.h"
 #include "Button.h"
