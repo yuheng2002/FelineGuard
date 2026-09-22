@@ -3,6 +3,12 @@
 #include "stm32f4xx_hal.h"
 #include "board.h"
 #include "Feed.h"
+#include "FreeRTOS.h"
+#include "task.h"
+
+/* Sample faster than the shortest press, so no press is missed.
+ * A human's press lasts far longer than 20 ms. */
+#define BUTTON_POLL_MS   20
 
 static bool was_pressed;
 
@@ -25,13 +31,20 @@ void Button_Init(void)
 	was_pressed = !HAL_GPIO_ReadPin(USER_BUTTON_PORT, USER_BUTTON_PIN);
 }
 
-void Button_Poll(void)
+void Button_Task(void *arg)
 {
-	bool pressed = !HAL_GPIO_ReadPin(USER_BUTTON_PORT, USER_BUTTON_PIN); /* PC13 is active low: pressed reads 0, so invert it */
+	while (1)
+	{
+		bool pressed = !HAL_GPIO_ReadPin(USER_BUTTON_PORT, USER_BUTTON_PIN); /* PC13 is active low: pressed reads 0, so invert it */
 
-	if (was_pressed && !pressed){
-		Feed_Request(FEED_BUTTON);
+		/* detects when button is released */
+		if (was_pressed && !pressed){
+			Feed_Request(FEED_BUTTON);
+		}
+
+		was_pressed = pressed;
+
+		/* sleep, then sample again next period */
+		vTaskDelay(pdMS_TO_TICKS(BUTTON_POLL_MS));
 	}
-
-	was_pressed = pressed;
 }

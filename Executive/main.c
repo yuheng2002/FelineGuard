@@ -72,6 +72,18 @@ int main(void)
         while (1) { }
     }
 
+    /* Button and Schedule spend nearly all their time asleep in vTaskDelay,
+     * so neither needs a high priority or a large stack. */
+    if (xTaskCreate(Button_Task, "button", 128, NULL, 1, NULL) != pdPASS)
+    {
+        while (1) { }
+    }
+
+    if (xTaskCreate(Schedule_Task, "schedule", 128, NULL, 1, NULL) != pdPASS)
+    {
+        while (1) { }
+    }
+
     /* 1. creates the idle task (priority 0)
      * 2. creates the timer task, because configUSE_TIMERS is 1
      * 3. configures SysTick to generate ticks at configTICK_RATE_HZ
