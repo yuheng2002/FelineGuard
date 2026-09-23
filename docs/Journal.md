@@ -934,3 +934,36 @@ For the button: a person pressing and releasing takes tens to hundreds of millis
 For the schedule: the calendar only increments once a second, so checking once a second finds everything there is to find. The check itself is a few instructions — microseconds — and then the task sleeps for a second.
 
 The key point about that sleep: `vTaskDelay` puts the task into the `Blocked` state, but it does not block the CPU. While this task sleeps, the scheduler runs whoever else is ready. **The work takes microseconds; the sleep gives the remaining time to everyone else.**
+
+### 2026-09-23 
+Verified all five tasks on hardware: FEED stops after five seconds, a second FEED during a feed returns Busy feeding immediately, the button starts a feed, and Alarm A fired on time. The defer path is still untested. Below is Serial Monitor output:
+
+```text 
+---- Opened the serial port COM4 ----
+---- Sent utf8 encoded message: "PING\n" ----
+System ready
+---- Sent utf8 encoded message: "FEED\n" ----
+Feeding started
+Feed complete
+---- Sent utf8 encoded message: "FEED\n" ----
+Feeding started
+---- Sent utf8 encoded message: "FEED\n" ----
+Busy feeding
+Feed complete
+Feed complete
+---- Sent utf8 encoded message: "TIME 16:05\n" ----
+Time set
+---- Sent utf8 encoded message: "SCHED A 16:06\n" ----
+Alarm A set
+---- Sent utf8 encoded message: "TIME?\n" ----
+16:05:14
+---- Sent utf8 encoded message: "TIME?\n" ----
+16:05:41
+---- Sent utf8 encoded message: "TIME?\n" ----
+16:05:50
+---- Sent utf8 encoded message: "TIME?\n" ----
+16:05:59
+---- Sent utf8 encoded message: "FEED\n" ----
+Busy feeding
+Feed complete
+```
