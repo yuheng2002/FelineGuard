@@ -982,13 +982,15 @@ In the FreeRTOS version those modules are separate tasks, and I want the watchdo
 
 The textbook fix is for each task to report to a watchdog task, **which only kicks the dog once every task has reported.** A task that stops reporting means no kick, and the chip resets.
 
-The catch is that this assumes every task wakes regularly. Two of mine do: `Button` every 20 ms, `Schedule` every second. But `Comms`, `CmdProc` and `Feed` block with `portMAX_DELAY` — they sleep until something happens, possibly for hours. Making them report would mean adding a timeout to every one of those blocking calls, just so they wake up to check in.
+The catch is that this assumes every task wakes regularly. Two of mine do: `Button` every 20 ms, `Schedule` every second. But `Comms`, `CmdProc` and `Feed` block with `portMAX_DELAY` — they sleep until something happens, possibly for hours. **Making them report would mean adding a timeout to every one of those blocking calls, just so they wake up to check in.**
 
 #### Taking the complement
 
-The simpler way gives the same black-box behavior: **instead of asking every task to report, check whether the CPU is ever free.**
+**Instead of asking every task to report, check whether the CPU is ever free.**
 
 This project has a handful of tasks, each doing microseconds of work at a time, so well over 99% of the time none of them is running — the **idle** task is. So I kick the dog from idle. It gets kicked far more often than needed, but it does exactly the job: **if idle never gets to run, some task is stuck spinning, and the watchdog resets the chip.**
+
+> **NOTE:** If a task blocks forever: say it waits on a mutex that never gets given back, it stays asleep. It is not spinning in a while loop, so it does not trap the CPU: **blocked tasks give up the CPU so other tasks can run.** Idle still runs, and the dog still gets kicked. **The system looks healthy, but that task is practically dead.**
 
 #### The idle hook
 
