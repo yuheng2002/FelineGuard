@@ -42,7 +42,12 @@ void init_all(void)
 		Comms_SendResponse("RTC clock failed to initialize");
 	}
 
-	// IWDG_Init();
+	IWDG_Init();
+}
+
+void vApplicationIdleHook(void)
+{
+    IWDG_Refresh();
 }
 
 int main(void)
