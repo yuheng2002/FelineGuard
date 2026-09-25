@@ -1,5 +1,7 @@
 # FelineGuard
 
+![Build](https://github.com/yuheng2002/FelineGuard/actions/workflows/build.yml/badge.svg?branch=main)
+
 Firmware for a stepper-driven cat feeder, built on an STM32F446RE.
 
 A feed can be triggered three ways — a serial command, a button press, or a daily alarm — and all three are arbitrated against a single motor. The firmware never blocks, recovers from a hang on its own, and keeps its schedule across a reset.
