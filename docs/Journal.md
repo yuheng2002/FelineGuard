@@ -1028,7 +1028,7 @@ As the class went on, assignments had several source files. Did I really want to
 
 An object file is machine code (binary), but it is not runnable yet; references between files are still unresolved. The **linker** joins all of them into one image and produces the `.elf` (Executable and Linkable Format) and a `.map` describing where everything landed.
 
-After that class I moved on to microcontrollers, using STM32CubeIDE, Nueclipse, and VS Code. I never connected it back until now. Whatever the tool, underneath it is the same thing: **a compiler, a makefile telling it what to build, and a linker producing the `.elf` that gets flashed.** The only real difference is that for a microcontroller the compiler is a cross compiler. `arm-none-eabi-gcc` runs on my PC but produces code for the ARM chip, so the `.elf` cannot run on the PC at all.
+After that class I moved on to microcontrollers, using STM32CubeIDE, NuEclipse, and VS Code. I never connected it back until now. Whatever the tool, underneath it is the same thing: **a compiler, a makefile telling it what to build, and a linker producing the `.elf` that gets flashed.** The only real difference is that for a microcontroller the compiler is a cross compiler. `arm-none-eabi-gcc` runs on my PC but produces code for the ARM chip, so the `.elf` cannot run on the PC at all.
 
 #### Why CI needs its own Makefile
 
