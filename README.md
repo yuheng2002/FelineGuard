@@ -1,6 +1,6 @@
 # FelineGuard
 
-![Build](https://github.com/yuheng2002/FelineGuard/actions/workflows/build.yml/badge.svg?branch=main)
+[![Build](https://github.com/yuheng2002/FelineGuard/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/yuheng2002/FelineGuard/actions/workflows/build.yml?query=branch%3Amain)
 
 Firmware for a stepper-driven cat feeder, built on an STM32F446RE.
 
