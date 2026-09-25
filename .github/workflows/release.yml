@@ -1,0 +1,33 @@
+name: Release
+
+# Runs only when a version tag such as v1.1.0 is pushed.
+on:
+  push:
+    tags: ['v*']
+
+# Needed to create a release on the repository.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Install the ARM toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi
+
+      - name: Build Release
+        run: make RELEASE=1
+
+      # A draft is not public. The binary is flashed and checked on the board first, then the release is published manually.
+      - name: Create a draft release with the firmware attached
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: build/release/FelineGuard.elf
