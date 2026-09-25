@@ -1015,3 +1015,44 @@ Recovered from crash
 ```
 
 For `CRASHFEED`, there is no `Feed complete` before the recovery message, so the reset landed before the five-second feed finished. Both commands work unchanged from v1.
+
+### 2026-09-24 -- Adding CI
+
+Today was about setting up Continuous Integration with GitHub Actions.
+
+#### Connecting it back to CSE 29
+
+When I took CSE 29 at UCSD last fall, I learned C in a Linux environment. For each file I ran something like `gcc -c main.c -o main.o`, and sometimes without `-o` and let it pick a default name. That is the **compiler turning a C source file into an object file.**
+
+As the class went on, assignments had several source files. Did I really want to compile each one by hand? Of course not. The answer is a makefile: **a recipe that compiles every source file into its object file, and only recompiles what changed.** That is also why I always had to add header directories under `Includes` and source directories under `Source Location` in CubeIDE's `Paths and Symbols` — those settings are what end up in the makefile CubeIDE generates.
+
+An object file is machine code (binary), but it is not runnable yet; references between files are still unresolved. The **linker** joins all of them into one image and produces the `.elf` (Executable and Linkable Format) and a `.map` describing where everything landed.
+
+After that class I moved on to microcontrollers, using STM32CubeIDE, Nueclipse, and VS Code. I never connected it back until now. Whatever the tool, underneath it is the same thing: **a compiler, a makefile telling it what to build, and a linker producing the `.elf` that gets flashed.** The only real difference is that for a microcontroller the compiler is a cross compiler. `arm-none-eabi-gcc` runs on my PC but produces code for the ARM chip, so the `.elf` cannot run on the PC at all.
+
+#### Why CI needs its own Makefile
+
+CubeIDE keeps the project settings in `.cproject` and generates a makefile from it on every build. That generated makefile lives in `Debug/`, which is not committed, and **has this machine's paths filled in.** That is fine for anyone else using CubeIDE, because their CubeIDE regenerates it from `.cproject` with their own paths.
+
+The problem is that **only CubeIDE can translate `.cproject` into a makefile. A GitHub runner has no CubeIDE, so it needs a makefile that stands on its own.**
+
+#### What CI does
+
+Continuous Integration here means: **on every push, GitHub spins up a fresh Linux virtual machine, installs the tools, and tries to build the project from nothing but what is in the repository.** If a file was never committed or a path only exists on my machine, it fails there.
+
+Beyond compiling, CI can also run test scripts, which I have not done yet. With hardware involved that part is harder. But the idea stands: **if the code does not even compile, it will not pass anything else.**
+
+#### The files
+
+I had Claude write the `Makefile` and the workflow file. The `.yml` is pretty straightforward and easy to read: it tells the runner to use Ubuntu, install the ARM toolchain (the `gcc-arm-none-eabi` package), then run `make` for the Debug build and `make RELEASE=1` for the Release build.
+
+#### Checking the Makefile against CubeIDE
+
+Before pushing, I built locally with the Makefile and compared the result with CubeIDE's build on the same branch:
+
+| | text | data | bss |
+|---|---|---|---|
+| CubeIDE | 17784 | 272 | 1640 |
+| Makefile | 17784 | 272 | 1640 |
+
+Identical, so the Makefile reproduces CubeIDE's build exactly. The Release build came out at 10308 bytes of code, about 42% smaller with `-Os`. The first run on GitHub passed in about a minute and a half.
