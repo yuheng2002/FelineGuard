@@ -180,7 +180,7 @@ PA2 and PA3 are routed to the on-board ST-LINK. UM1724 documents them as CN10 pi
 
 - **Dispensing is open loop.** The firmware controls how long the auger turns, not how many grams come out, and it cannot detect a skipped step.
 - **The calendar does not survive a power cut.** VBAT is tied to VDD on this board, so the clock and schedule are lost and scheduled feeding suspends until `TIME` is sent again.
-- **A repeating reset loop repeats the make-up feed.** The alarm flag is cleared after the feed rather than before, so a reset landing between the two replays it. This is the deliberate direction: an extra serving is recoverable, a missed one is not.
+- **The alarm flag is cleared too early.** The protocol says to clear it after the feed; the firmware clears it right before. So a reset mid-feed cuts that serving short and it isn't made up.
 - **The A4988 is briefly enabled at power-on.** Between reset and `MOTOR_Init()`, the `EN` pin floats and the driver's internal pull-down enables it. Harmless in the documented power-up order, since VMOT is not connected yet.
 - **Hardware faults are not distinguished from bad input.** A HAL failure inside `RTC_SetTime` is reported as `Invalid time`, the same as an out-of-range hour. The distinction was dropped deliberately — a dead oscillator is not something the owner can act on.
 
