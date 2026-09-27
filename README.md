@@ -83,7 +83,7 @@ A scheduled feed is deferred rather than dropped because it is the only source w
 
 Each module was tested on hardware as it was written, and the whole chain end to end once the last one was in place.
 
-**STEP waveform.** Measured on PA0 with a logic analyzer: **250.56 Hz**, period **3.991 ms**. The 0.2% error comes from the HSI internal RC oscillator, which is specified at ±1%. At 250 Hz in full-step mode with a 200-step motor, a five-second serving is 6.25 revolutions of the auger.
+**STEP waveform.** Measured on PA0 with a logic analyzer: **250.25 Hz**, period **3.996 ms**. The 0.1% error comes from the HSI internal RC oscillator, which is specified at ±1%. At 250 Hz in full-step mode with a 200-step motor, a five-second serving is 6.25 revolutions of the auger.
 
 ![250 Hz STEP waveform captured with a logic analyzer](<docs/250Hz waveform.png>)
 
