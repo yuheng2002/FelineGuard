@@ -218,5 +218,3 @@ Makefile         builds without CubeIDE
 | [Decision Log.md](docs/Decision%20Log.md) | Every design decision with the alternative that was rejected and why |
 | [Journal.md](docs/Journal.md) | Development log — what was built each day, what broke, and what the fix taught |
 | [Test plan.md](<docs/Test plan.md>) | The Release build test procedure, shared by both branches |
-
-The Decision Log is the best place to start if the question is *why* rather than *what*.
