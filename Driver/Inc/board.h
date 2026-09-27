@@ -5,10 +5,10 @@
 #include "stm32f4xx_hal.h"
 
 /* interrupt priorities, lower value = higher priority
- * SysTick is 0 (set by HAL_Init).
- * UART is highest among peripherals */
+ * TIM7 (HAL tick) is 0, set by HAL_Init.
+ * SysTick belongs to FreeRTOS and runs at the lowest priority, 15.
+ * USART2 calls xQueueSendFromISR, so its value must be >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY (5). */
 #define PRIO_USART2   		5
-#define PRIO_TIM6     		6
 
 /* User LED */
 #define LD2_PORT            GPIOA
