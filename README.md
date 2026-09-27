@@ -236,5 +236,3 @@ Makefile         builds without CubeIDE
 | [Journal.md](docs/Journal.md) | Development log — what was built each day, what broke, and what the fix taught |
 | [Test plan.md](<docs/Test plan.md>) | The Release build test procedure, written against the protocol |
 | [Test report v1.md](<docs/Test report v1.md>) | Results of running the test plan on this version |
-
-The Decision Log is the shortest and the best place to start if the question is *why* rather than *what*.
