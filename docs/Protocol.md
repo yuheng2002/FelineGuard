@@ -97,9 +97,9 @@ Naming the slot means a feeding time can be changed on its own. With an implicit
 #### CRASH and CRASHFEED
 Both are development aids, not product features, and are compiled out of a release build. Neither is considered a feed request, so neither appears in the arbitration table in Section 5.3.
 
-`CRASH` stops the main loop while the device is idle. The watchdog then resets the MCU, and the reset cause is reported on the next boot.
+`CRASH` hangs the firmware while the device is idle. The watchdog then resets the MCU, and the reset cause is reported on the next boot.
 
-`CRASHFEED` starts a feed and then stops the main loop while the motor is still running. It tests one thing that `CRASH` cannot: that a crash during motor motion still ends with the motor stopped. No firmware runs to stop it — a system reset clears the timer's enable bit and returns the STEP pin to its reset state, which removes the waveform. That is the assumption worth testing on real hardware, and it only comes into play because the motor is stopped from the main loop rather than from a timer interrupt (Section 5.5).
+`CRASHFEED` starts a feed and then hangs the firmware while the motor is still running. It tests one thing that `CRASH` cannot: that a crash during motor motion still ends with the motor stopped. No firmware runs to stop it — a system reset clears the timer's enable bit and returns the STEP pin to its reset state, which removes the waveform. That is the assumption worth testing on real hardware, and it only comes into play because the motor is stopped by code outside interrupts rather than by a timer interrupt (Section 5.5).
 
 Both commands hang the CPU on purpose, so any byte sent between the command and the reset is lost. **The host should send a debug command only when the device is idle, and should wait for the boot message before sending anything else.**
 
@@ -164,9 +164,7 @@ Only one scheduled feed can be held at a time. A second one arriving while anoth
 
 ![Feed arbitration state machine](<Feed Arbitration FSM.png>)
 
-"Feeding" here describes the motor as a physical resource, not firmware availability. The firmware never blocks. The main loop keeps running and keeps receiving bytes for the whole duration of a feed.
-
-![Main loop control flow](<Control Flow.png>)
+"Feeding" here describes the motor as a physical resource, not firmware availability. The device keeps receiving bytes and answering commands for the whole duration of a feed.
 
 ### 5.4 Feedback on a Dropped Request
 
@@ -176,8 +174,8 @@ The button and the schedule are observed by watching the motor.
 
 ### 5.5 Watchdog Timeout
 
-The independent watchdog (IWDG) timeout is about 1 s. The main loop refreshes it once per pass, so any path that does not return to the top of the loop within that window forces a hardware reset.
+The independent watchdog (IWDG) timeout is about 1 s. If the firmware hangs for longer than that, the watchdog forces a hardware reset.
 
-The IWDG runs off the LSI, an internal RC oscillator specified at 17 to 47 kHz, so "one second" is really somewhere between roughly 0.7 s and 1.9 s. The margin is large enough that this does not matter: nothing in the firmware blocks for more than a few milliseconds, the longest single operation being a UART transmission of about 1.3 ms at 115200 baud. The timeout is set by how quickly the device should recover from a hang, not by any operation it has to tolerate.
+The IWDG runs off the LSI, an internal RC oscillator specified at 17 to 47 kHz, so "one second" is really somewhere between roughly 0.7 s and 1.9 s. The margin is large enough that this does not matter: nothing in the firmware keeps the CPU busy for more than a few milliseconds, the longest single operation being a UART transmission of about 1.3 ms at 115200 baud. The timeout is set by how quickly the device should recover from a hang, not by any operation it has to tolerate.
 
-Refreshing the watchdog is the main loop's job and only the main loop's. The refresh is the evidence that the supervised code is still running, which is also why the motor is stopped from the main loop rather than from the timer interrupt: **interrupts keep firing while the main loop is hung, so an interrupt-driven stop would let a dead system finish a feed and look healthy.**
+The watchdog is refreshed only from code outside interrupts. The refresh is the evidence that the supervised code is still running, which is also why the motor is stopped by that same code rather than by a timer interrupt: **interrupts keep firing while the rest of the firmware is hung, so an interrupt-driven stop would let a dead system finish a feed and look healthy.**
