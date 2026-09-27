@@ -4,9 +4,9 @@
 
 Firmware for a stepper-driven cat feeder, built on an STM32F446RE.
 
-A feed can be triggered three ways — a serial command, a button press, or a daily alarm — and all three are arbitrated against a single motor. The firmware never blocks, recovers from a hang on its own, and keeps its schedule across a reset.
+A feed can be triggered three ways — a serial command, a button press, or a daily alarm — and all three are arbitrated against a single motor. The firmware stays responsive during a feed, recovers from a hang on its own, and keeps its schedule across a reset.
 
-> A FreeRTOS port of this firmware is in progress on the [`freertos`](../../tree/freertos) branch — same hardware, same protocol, different execution model.
+> A FreeRTOS port of this firmware lives on the [`freertos`](../../tree/freertos) branch — same hardware, same protocol, different execution model.
 
 ![Hardware setup: NUCLEO-F446RE, A4988 carrier on a breadboard, NEMA 17 driving the auger, 12 V supply](<docs/hardware setup.jpg>)
 
@@ -43,12 +43,9 @@ Four layers, with dependencies pointing in one direction only.
 | **Driver** | UART_CTRL, TIMER, MOTOR_CTRL, IWDG_CTRL, RTC_CTRL, `board.h` | One peripheral each; no knowledge of what a feed is |
 | **HAL / CMSIS** | ST vendor code | Register access |
 
-> No layer calls into the one above it. Within the application layer modules do call each other — CmdProc asks Feed, Feed reports through Comms — but nothing below ever calls back up, otherwise it would be a dependency inversion.
+> No layer calls into the one above it. Within the application layer modules do call each other — CmdProc asks Feed, Feed reports through Comms — but nothing below ever calls back up.
 
-Two things fall out of that split:
-
-- **No application code touches a register or a HAL call.** The one exception is `HAL_Init()` in the Executive, which belongs to no peripheral.
-- **`Feed` is the sole owner of the motor.** Every other module asks it; nothing else calls `MOTOR_Start`.
+One thing falls out of that split: **`Feed` is the sole owner of the motor.** Every other module asks it; nothing else calls `MOTOR_Start`.
 
 `board.h` holds the pin map and nothing else — a header of macros with no `.c` file. There is no GPIO driver, because the HAL already provides one and wrapping it would add an indirection with no content.
 
@@ -127,6 +124,8 @@ Recovered from crash
 
 **Power cycle.** Pulling the USB cable and reconnecting brings back `Time not set`, and scheduled feeding stays suspended until `TIME` is sent again.
 
+**Release build.** Everything above was run on the Debug build. The Release build (`-Os`, debug commands compiled out) was then tested on its own against a written [Test Plan](<docs/Test plan.md>): 22 of 22 checks passed, including the deferred-feed path, which had not been exercised on hardware before. Results and observations are in the [Test Report](<docs/Test report v1.md>).
+
 ## Command protocol
 
 Commands are ASCII lines terminated by `\n`. Arguments are fixed width, so parsing reads fixed offsets with no tokenizer.
@@ -140,6 +139,8 @@ Commands are ASCII lines terminated by `\n`. Arguments are fixed width, so parsi
 | `SCHED` | `A hh:mm` / `B hh:mm` | `Alarm A set` / `Alarm B set` |
 
 Rejections come in two kinds. `Invalid command` means the line is not well formed; `Invalid time` means it is well formed but the value is not usable. The two lead the sender to do different things.
+
+After opening the port, send one empty line before the first command. While the MCU is in reset its UART pins are undriven, and a glitch on the line can arrive as a stray byte in front of the first command. The empty line flushes it.
 
 Full specification, including framing rules and every message the device can send: [Protocol.md](docs/Protocol.md).
 
@@ -185,7 +186,7 @@ PA2 and PA3 are routed to the on-board ST-LINK. UM1724 documents them as CN10 pi
 
 ## Future improvements
 
-- [ ] **Scripted test against a Release build.** Everything under Verification was run by hand on a `Debug` build. A host-side script driving the serial link would make the test repeatable, and running it against `Release` (`-O3`) would catch anything that quietly depends on a missing `volatile` or on debug-build timing.
+- [ ] **Scripted test.** The Release build was tested by hand against the test plan. A host-side script driving the serial link would make that run repeatable, and could write the test report itself.
 - [ ] **Single supply.** 12V in, with the logic side derived through a regulator, removes the power-up ordering question entirely. The open problem is keeping the on-board ST-LINK usable without back-feeding it.
 - [ ] **Proper motor mount.** The printed enclosure expects heat-set inserts at the motor face, which are not fitted yet.
 - [ ] **Load cell on the auger.** An HX711 would make a serving weight-based rather than time-based, and would let the firmware notice a skipped step instead of assuming none.
@@ -193,13 +194,22 @@ PA2 and PA3 are routed to the on-board ST-LINK. UM1724 documents them as CN10 pi
 
 ## Building
 
-Requires **STM32CubeIDE**. The project is a plain Eclipse managed-build project — the HAL and CMSIS trees are checked in, and no `.ioc` file or CubeMX code generation is involved.
+Build in **STM32CubeIDE**, or with `make` (below). The project is a plain Eclipse managed-build project — the HAL and CMSIS trees are checked in, and no `.ioc` file or CubeMX code generation is involved.
 
 ```
 File → Open Projects from File System → select the repository root
 ```
 
 Build the `Debug` configuration and flash over the on-board ST-LINK. `Debug` defines `DEBUG`, which is what compiles in the `CRASH` and `CRASHFEED` commands.
+
+Without CubeIDE, the `Makefile` builds the same sources with `arm-none-eabi-gcc`. CI runs both builds on every push:
+
+```
+make              # Debug   → build/debug/FelineGuard.elf
+make RELEASE=1    # Release → build/release/FelineGuard.elf
+```
+
+Each version on the [Releases](../../releases) page has the Release `.elf` attached, built by CI and checked on hardware before publishing. Flash it with STM32CubeProgrammer.
 
 Serial settings: **115200 8N1**, line ending **LF**.
 
@@ -212,7 +222,9 @@ Executive/       main.c
 System/          syscalls, sysmem, system_stm32f4xx, hal_conf
 HAL/  CMSIS/     ST vendor code
 Startup/         startup_stm32f446retx.s
-docs/            protocol, decision log, journal, diagrams
+docs/            protocol, decision log, journal, test plan and report, diagrams
+Makefile         builds without CubeIDE
+.github/         CI: build on every push, draft release on version tags
 ```
 
 ## Documentation
@@ -222,5 +234,7 @@ docs/            protocol, decision log, journal, diagrams
 | [Protocol.md](docs/Protocol.md) | The specification: commands, framing, arbitration rules, hardware constraints |
 | [Decision Log.md](docs/Decision%20Log.md) | Every design decision with the alternative that was rejected and why |
 | [Journal.md](docs/Journal.md) | Development log — what was built each day, what broke, and what the fix taught |
+| [Test plan.md](<docs/Test plan.md>) | The Release build test procedure, written against the protocol |
+| [Test report v1.md](<docs/Test report v1.md>) | Results of running the test plan on this version |
 
 The Decision Log is the shortest and the best place to start if the question is *why* rather than *what*.
