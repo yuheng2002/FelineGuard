@@ -4,7 +4,7 @@
 
 Firmware for a stepper-driven cat feeder, built on an STM32F446RE.
 
-A feed can be triggered three ways — a serial command, a button press, or a daily alarm — and all three are arbitrated against a single motor. The firmware never blocks, recovers from a hang on its own, and keeps its schedule across a reset.
+A feed can be triggered three ways — a serial command, a button press, or a daily alarm — and all three are arbitrated against a single motor. The firmware stays responsive during a feed, recovers from a hang on its own, and keeps its schedule across a reset.
 
 > This is the FreeRTOS port. The original superloop version is on the [`main`](../../tree/main) branch — same hardware, same protocol, different execution model.
 
@@ -17,7 +17,7 @@ A feed can be triggered three ways — a serial command, a button press, or a da
 - Takes a button press as an equivalent request, one press per serving
 - Keeps a real-time clock and fires up to two scheduled feeds per day — two because the RTC has exactly two alarm registers, so each feeding time lives directly in hardware with no schedule table to maintain
 - Detects a feed missed while it was down, and makes up **at most one** however many were missed
-- Resets itself if the main loop stops, and reports that on the next boot
+- Resets itself if a task stops giving up the CPU, and reports that on the next boot
 
 ## System overview
 
@@ -27,38 +27,47 @@ between them and drives a single STEP/DIR output through to the auger.
 ![System signal chain](<docs/System architecture.png>)
 
 The 12 V motor supply reaches the coils only through the A4988 — it never
-touches the logic side. The watchdog relationship is two-way: the main loop
+touches the logic side. The watchdog relationship is two-way: the idle task
 refreshes it, and it resets the MCU if that stops happening.
 
 ## Firmware Architecture
 
-Four layers, with dependencies pointing in one direction only.
+Five layers. Dependencies point downward, apart from the two exceptions below the table.
 
-![Layered architecture](<docs/Layered Architecture.png>)
+![Layered architecture](<docs/Layered Architecture_FreeRTOS.png>)
 
 | Layer | Contents | Responsibility |
 |---|---|---|
-| **Executive** | `main.c` | Initialization order and the main loop; no feeding logic of its own |
-| **Application** | Comms, CmdProc, Feed, Button, Schedule | The feeder's rules — framing, parsing, arbitration, scheduling |
-| **Driver** | UART_CTRL, TIMER, MOTOR_CTRL, IWDG_CTRL, RTC_CTRL, `board.h` | One peripheral each; no knowledge of what a feed is |
+| **Executive** | `main.c` | Initialization order and task creation; no feeding logic of its own |
+| **Application** | `Comms`, `CmdProc`, `Feed`, `Button`, `Schedule` | The feeder's rules — framing, parsing, arbitration, scheduling. Each module runs as a task |
+| **Middleware** | FreeRTOS kernel | Tasks, queues, mutexes and delays; used by the application and by UART_CTRL |
+| **Driver** | `UART_CTRL`, `MOTOR_CTRL`, `IWDG_CTRL`, `RTC_CTRL`, `board.h` | One peripheral each; no knowledge of what a feed is |
 | **HAL / CMSIS** | ST vendor code | Register access |
 
-> No layer calls into the one above it. Within the application layer modules do call each other — CmdProc asks Feed, Feed reports through Comms — but nothing below ever calls back up, otherwise it would be a dependency inversion.
+> Calls go downward, with two exceptions. `UART_CTRL` calls up into FreeRTOS to queue each received byte, and the kernel calls back into `main.c` through the idle and stack-overflow hooks. Within the application layer modules do call each other — CmdProc asks Feed, Feed reports through Comms.
 
-Two things fall out of that split:
+One thing falls out of that split: **`Feed` is the sole owner of the motor.** Every other module asks it; nothing else calls `MOTOR_Start`.
 
-- **No application code touches a register or a HAL call.** The one exception is `HAL_Init()` in the Executive, which belongs to no peripheral.
-- **`Feed` is the sole owner of the motor.** Every other module asks it; nothing else calls `MOTOR_Start`.
+`board.h` holds the pin map and interrupt priorities — a header of macros with no `.c` file. There is no GPIO driver, because the HAL already provides one and wrapping it would add an indirection with no content.
 
-`board.h` holds the pin map and nothing else — a header of macros with no `.c` file. There is no GPIO driver, because the HAL already provides one and wrapping it would add an indirection with no content.
+FreeRTOS takes SysTick for its tick. The HAL still needs a 1 ms tick for its timeouts, so that one moves to TIM7 (`System/Src/stm32f4xx_hal_timebase_tim.c`).
 
 ## How a feed happens
 
-The main loop is a fixed sequence with no early exits. Each pass refreshes the watchdog, finishes any feed that has completed, and then gives each of the three sources a turn to raise a request.
+Each module runs as its own task and sleeps until it has something to do.
 
-![Main loop control flow](<docs/Control Flow.png>)
+| Task | Priority | Blocks on | Then |
+|---|---|---|---|
+| Comms | 2 | a byte from the UART interrupt | adds it to the line; hands complete lines to CmdProc |
+| CmdProc | 1 | a complete line | parses it and calls the matching module |
+| Feed | 1 | a feed starting | waits five seconds, stops the motor |
+| Button | 1 | a 20 ms delay | samples B1; requests a feed on release |
+| Schedule | 1 | a 1 s delay | requests a feed if an alarm has fired |
+| Idle | 0 | never blocks | refreshes the watchdog |
 
-Requests all go to `Feed`, which owns the motor and applies one rule regardless of who asked:
+Comms runs one level higher because a full receive queue drops bytes, while a line waiting to be parsed just waits.
+
+Every request goes through `Feed_Request()`, which applies one rule regardless of who asked:
 
 | Source | Motor idle | Motor feeding |
 |---|---|---|
@@ -70,62 +79,32 @@ A scheduled feed is deferred rather than dropped because it is the only source w
 
 ![Feed arbitration state machine](<docs/Feed Arbitration FSM.png>)
 
+On an idle-to-feeding transition, `Feed_Request()` starts the motor and signals `Feed_Task` through a binary semaphore. `Feed_Task` sleeps five seconds in `vTaskDelay()`, stops the motor, then either starts the deferred feed or goes back to waiting. This replaces v1's TIMER module and its interrupt.
+
+Two mutexes guard what the tasks share: `state_mutex` around the feed state, and `tx_mutex` around the UART transmitter so responses from CmdProc and Feed never interleave.
+
 ## Reliability
 
-**The main loop stops the motor, not the timer interrupt.** Interrupts keep firing while the main loop is hung — the CPU is still executing, just stuck. If the interrupt stopped the motor, a system that had already died would still finish its feed cleanly and look healthy. Leaving it to the main loop makes `"Feed complete"` mean that the code the watchdog supervises is still alive.
+**The idle task refreshes the watchdog.** It has the lowest priority, so it runs only when every other task is blocked. A task that holds the CPU for about a second starves it, and the watchdog resets the MCU. The reset cause is read from `RCC_CSR` and reported on the next boot.
 
-**The watchdog refresh is the evidence.** It happens in the main loop and nowhere else. Any path that fails to return to the top of the loop within about a second forces a hardware reset, and the reset cause is read from `RCC_CSR` and reported on the next boot.
+**Two commands exist to prove it.** `CRASH` spins inside `CmdProc_Task` while idle. `CRASHFEED` starts a feed and then spins, so the fault lands during motor motion. No firmware runs to stop the motor — the reset clears the timer enable bit and returns the STEP pin to its reset state. Both are compiled out of a release build.
 
-**Two commands exist to prove it.** `CRASH` hangs the CPU while idle. `CRASHFEED` hangs it mid-feed, which tests something the first cannot: that a fault during motor motion still ends with the motor stopped. No firmware runs to stop it — the reset clears the timer enable bit and returns the STEP pin to its reset state. Both are compiled out of a release build.
-
-**A missed feed needs no special code path.** The RTC alarm flag is a level, not a pulse, and it lives in the backup domain. If the device was reset across an alarm time, the flag is still set when it comes back, and the first ordinary pass of the main loop reads it like any other alarm. Because it is one bit rather than a counter, missing two alarms is indistinguishable from missing one — the "make up at most one serving" policy comes from the hardware rather than from code enforcing it.
+**A missed feed needs no special code path.** The RTC alarm flag is a level, not a pulse, and it lives in the backup domain. If the device was reset across an alarm time, the flag is still set when it comes back, and the first check by `Schedule_Task` reads it like any other alarm. Because it is one bit rather than a counter, missing two alarms is indistinguishable from missing one — the "make up at most one serving" policy comes from the hardware rather than from code enforcing it.
 
 **A power cut is treated differently from a reset.** The calendar is lost when VDD drops, so the firmware checks whether the clock has ever been set before acting on any alarm. It reports `"Time not set"` and suspends scheduled feeding rather than feeding on a clock it has no reason to trust.
 
 ## Verification
 
-Each module was tested on hardware as it was written, and the whole chain end to end once the last one was in place.
+After the port, these were rerun on hardware with the Debug build:
 
-**STEP waveform.** Measured on PA0 with a logic analyzer: **250.56 Hz**, period **3.991 ms**. The 0.2% error comes from the HSI internal RC oscillator, which is specified at ±1%. At 250 Hz in full-step mode with a 200-step motor, a five-second serving is 6.25 revolutions of the auger.
+- **Feed and arbitration.** A feed stops after five seconds; a second `FEED` during a feed gets `Busy feeding` at once.
+- **Button.** A press and release starts a feed.
+- **Scheduled feed.** Alarm A fired on time.
+- **Crash recovery.** `CRASH` and `CRASHFEED` both come back with `Recovered from crash`. After `CRASHFEED`, `Recovered from crash` arrives with no `Feed complete` before it — the watchdog reset came before the five-second feed could finish. In hardware a feed is just the STEP waveform from TIM2, and the reset turns TIM2 off, so the motor stopped at that moment.
 
-![250 Hz STEP waveform captured with a logic analyzer](<docs/250Hz waveform.png>)
+Not yet rerun on this branch: the deferred feed, a missed feed across a reset, a power cycle, and the Release build against the [Test plan](<docs/Test plan.md>).
 
-A representative session over the serial link:
-
-```
-> PING
-System ready
-> TIME 14:30
-Time set
-> TIME?
-14:30:52
-> SCHED A 14:32
-Alarm A set
-Feed complete
-> FEED
-Feeding started
-Feed complete
-> FEED
-Feeding started
-> FEED
-Busy feeding
-> CRASH
-Recovered from crash
-> CRASHFEED
-Recovered from crash
-```
-
-**Scheduled feed.** The `Feed complete` after `Alarm A set` arrived on its own two minutes later, with nothing sent in between.
-
-**Arbitration.** The second `FEED` lands inside the five-second window and is refused rather than queued.
-
-**Crash recovery.** `CRASH` hangs the main loop while idle; the watchdog resets the MCU and the next boot reports the cause.
-
-**Crash during motion.** `CRASHFEED` hangs mid-feed. The motor stopped about a second in instead of running the full five — the reset arrived first.
-
-**Missed feed.** With Alarm A set one minute ahead, the reset button was held down across the alarm time. On release, a feed ran: the alarm flag had been set by hardware while the CPU was in reset, and the first pass of the main loop consumed it.
-
-**Power cycle.** Pulling the USB cable and reconnecting brings back `Time not set`, and scheduled feeding stays suspended until `TIME` is sent again.
+The STEP waveform was not re-measured. TIM2 and `MOTOR_CTRL` are unchanged from `main`, where it measured 250.25 Hz.
 
 ## Command protocol
 
@@ -140,6 +119,8 @@ Commands are ASCII lines terminated by `\n`. Arguments are fixed width, so parsi
 | `SCHED` | `A hh:mm` / `B hh:mm` | `Alarm A set` / `Alarm B set` |
 
 Rejections come in two kinds. `Invalid command` means the line is not well formed; `Invalid time` means it is well formed but the value is not usable. The two lead the sender to do different things.
+
+After opening the port, send one empty line before the first command. While the MCU is in reset its UART pins are undriven, and a glitch on the line can arrive as a stray byte in front of the first command. The empty line flushes it.
 
 Full specification, including framing rules and every message the device can send: [Protocol.md](docs/Protocol.md).
 
@@ -167,7 +148,7 @@ The A4988 `EN` input is driven high while idle, so the coils are only energized 
 | PA8 | EN to A4988 | Output, push-pull | Active low; high at idle, only low during a feed |
 | PA2 | USART2 TX | AF7, no pull | 115200 8N1 |
 | PA3 | USART2 RX | AF7, no pull | RXNE interrupt per byte |
-| PC13 | User button B1 | Input, pull-up | Active low, RC-debounced on the board, polled |
+| PC13 | User button B1 | Input, pull-up | Active low, RC-debounced on the board, polled every 20 ms |
 
 ### A note on probing the UART
 
@@ -177,15 +158,17 @@ PA2 and PA3 are routed to the on-board ST-LINK. UM1724 documents them as CN10 pi
 
 ## Known limitations
 
+- **The watchdog cannot see a task that blocks forever.** A task stuck waiting on a mutex or a queue gives up the CPU, so the idle task still runs and keeps refreshing. A deadlock looks healthy from the outside.
 - **Dispensing is open loop.** The firmware controls how long the auger turns, not how many grams come out, and it cannot detect a skipped step.
 - **The calendar does not survive a power cut.** VBAT is tied to VDD on this board, so the clock and schedule are lost and scheduled feeding suspends until `TIME` is sent again.
-- **A repeating reset loop repeats the make-up feed.** The alarm flag is cleared after the feed rather than before, so a reset landing between the two replays it. This is the deliberate direction: an extra serving is recoverable, a missed one is not.
+- **The alarm flag is cleared too early.** The protocol says to clear it after the feed; the firmware clears it right before. So a reset mid-feed cuts that serving short and it isn't made up.
 - **The A4988 is briefly enabled at power-on.** Between reset and `MOTOR_Init()`, the `EN` pin floats and the driver's internal pull-down enables it. Harmless in the documented power-up order, since VMOT is not connected yet.
 - **Hardware faults are not distinguished from bad input.** A HAL failure inside `RTC_SetTime` is reported as `Invalid time`, the same as an out-of-range hour. The distinction was dropped deliberately — a dead oscillator is not something the owner can act on.
 
 ## Future improvements
 
-- [ ] **Scripted test against a Release build.** Everything under Verification was run by hand on a `Debug` build. A host-side script driving the serial link would make the test repeatable, and running it against `Release` (`-O3`) would catch anything that quietly depends on a missing `volatile` or on debug-build timing.
+- [ ] **Task check-ins for the watchdog.** Refresh only once every task has reported in, which would also catch a task blocked forever. Comms, CmdProc and Feed block with `portMAX_DELAY`, so each would first need a timeout.
+- [ ] **Scripted test.** A host-side script driving the serial link would make the test plan repeatable, and could write the test report itself.
 - [ ] **Single supply.** 12V in, with the logic side derived through a regulator, removes the power-up ordering question entirely. The open problem is keeping the on-board ST-LINK usable without back-feeding it.
 - [ ] **Proper motor mount.** The printed enclosure expects heat-set inserts at the motor face, which are not fitted yet.
 - [ ] **Load cell on the auger.** An HX711 would make a serving weight-based rather than time-based, and would let the firmware notice a skipped step instead of assuming none.
@@ -193,7 +176,7 @@ PA2 and PA3 are routed to the on-board ST-LINK. UM1724 documents them as CN10 pi
 
 ## Building
 
-Requires **STM32CubeIDE**. The project is a plain Eclipse managed-build project — the HAL and CMSIS trees are checked in, and no `.ioc` file or CubeMX code generation is involved.
+Build in **STM32CubeIDE**, or with `make` (below). The project is a plain Eclipse managed-build project — the HAL, CMSIS and FreeRTOS trees are checked in, and no `.ioc` file or CubeMX code generation is involved.
 
 ```
 File → Open Projects from File System → select the repository root
@@ -201,18 +184,30 @@ File → Open Projects from File System → select the repository root
 
 Build the `Debug` configuration and flash over the on-board ST-LINK. `Debug` defines `DEBUG`, which is what compiles in the `CRASH` and `CRASHFEED` commands.
 
+Without CubeIDE, the `Makefile` builds the same sources with `arm-none-eabi-gcc`. CI runs both builds on every push:
+
+```
+make              # Debug   → build/debug/FelineGuard.elf
+make RELEASE=1    # Release → build/release/FelineGuard.elf
+```
+
+Each version on the [Releases](../../releases) page has the Release `.elf` attached, built by CI and checked on hardware before publishing. `v2.*` releases are tagged on this branch. Flash it with STM32CubeProgrammer.
+
 Serial settings: **115200 8N1**, line ending **LF**.
 
 ## Repository layout
 
 ```
 Application/     Comms, CmdProc, Feed, Button, Schedule
-Driver/          UART_CTRL, TIMER, MOTOR_CTRL, IWDG_CTRL, RTC_CTRL, board.h
+Driver/          UART_CTRL, MOTOR_CTRL, IWDG_CTRL, RTC_CTRL, board.h
 Executive/       main.c
-System/          syscalls, sysmem, system_stm32f4xx, hal_conf
+FreeRTOS/        kernel, Cortex-M4F port, heap_4, FreeRTOSConfig.h
+System/          syscalls, sysmem, system_stm32f4xx, hal_conf, HAL time base on TIM7
 HAL/  CMSIS/     ST vendor code
 Startup/         startup_stm32f446retx.s
-docs/            protocol, decision log, journal, diagrams
+docs/            protocol, decision log, journal, test plan, diagrams
+Makefile         builds without CubeIDE
+.github/         CI: build on every push, draft release on version tags
 ```
 
 ## Documentation
@@ -222,5 +217,6 @@ docs/            protocol, decision log, journal, diagrams
 | [Protocol.md](docs/Protocol.md) | The specification: commands, framing, arbitration rules, hardware constraints |
 | [Decision Log.md](docs/Decision%20Log.md) | Every design decision with the alternative that was rejected and why |
 | [Journal.md](docs/Journal.md) | Development log — what was built each day, what broke, and what the fix taught |
+| [Test plan.md](<docs/Test plan.md>) | The Release build test procedure, shared by both branches |
 
-The Decision Log is the shortest and the best place to start if the question is *why* rather than *what*.
+The Decision Log is the best place to start if the question is *why* rather than *what*.
