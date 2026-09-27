@@ -743,3 +743,40 @@ Before pushing, I built locally with the Makefile and compared the result with C
 | Makefile | 17784 | 272 | 1640 |
 
 Identical, so the Makefile reproduces CubeIDE's build exactly. The Release build came out at 10308 bytes of code, about 42% smaller with `-Os`. The first run on GitHub passed in about a minute and a half.
+
+### 2026-09-25 -- Continuous Delivery
+
+Today's goal is to simulate a Continuous Delivery process.
+
+#### CI vs CD
+
+Continuous Integration checks that the project still builds with the latest code changes. Continuous Delivery goes one step further: once the code builds, I tag it, GitHub builds the `.elf`, and I test that exact file on hardware before releasing it.
+
+The flow is:
+
+```
+tag → CI builds, creates a draft release, attaches the .elf
+    → I download that .elf → flash it and test 
+    → publish
+```
+
+The draft is not public, so if the test fails I can delete it and the tag, fix the problem, and tag again. **Nothing broken gets released.**
+
+#### The tested file was not the released file
+
+When I first ran the [Test Plan](<Test Plan.md>), I flashed the `.elf` built locally on my PC. But GitHub does not use the same compiler: it installs whatever version Ubuntu provides, while CubeIDE ships its own. Same source, same flags, different binary:
+
+| | text | data | bss |
+|---|---|---|---|
+| Local (CubeIDE's GCC 14.3) | 10308 | 272 | 1632 |
+| GitHub (Ubuntu's GCC 13.x) | 11544 | 272 | 1632 |
+
+`data` and `bss` match, because they only depend on the global variables in the code. `text` is the machine code, and that is where the two compilers made different choices.
+
+> This is a different comparison from the one in the 2026-09-24 entry. There, the compiler was the same and only the build recipe changed — CubeIDE's generated makefile against my Makefile — and the output was identical. Here, the Makefile is the same and only the compiler changed, and the output differs.
+
+#### The rule of thumb
+
+I could change the `.yml` so the GitHub runner downloads the same compiler version as my PC, or install on my PC the same one GitHub uses. Either way, the rule stays the same: **the firmware that gets released has to be the firmware I tested.**
+
+Imagine this project had many customers and I shipped them a firmware update. All they get is the `.elf`, which runs on their MCU just like it runs on mine. What if it passes every test built locally on my PC, but fails some when built by a different compiler? That is why the file I test is the one from the draft, not one I built myself.
