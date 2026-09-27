@@ -764,7 +764,7 @@ The draft is not public, so if the test fails I can delete it and the tag, fix t
 
 #### The tested file was not the released file
 
-When I first ran the [Test Plan](<Test Plan.md>), I flashed the `.elf` built locally on my PC. But GitHub does not use the same compiler: it installs whatever version Ubuntu provides, while CubeIDE ships its own. Same source, same flags, different binary:
+When I first ran the [Test Plan](<Test plan.md>), I flashed the `.elf` built locally on my PC. But GitHub does not use the same compiler: it installs whatever version Ubuntu provides, while CubeIDE ships its own. Same source, same flags, different binary:
 
 | | text | data | bss |
 |---|---|---|---|

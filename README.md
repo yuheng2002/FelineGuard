@@ -209,7 +209,7 @@ make              # Debug   → build/debug/FelineGuard.elf
 make RELEASE=1    # Release → build/release/FelineGuard.elf
 ```
 
-Each version on the [Releases](../../releases) page has the Release `.elf` attached, built by CI and checked on hardware before publishing. Flash it with STM32CubeProgrammer.
+From v1.1.0 on, each release on the [Releases](../../releases) page has the Release `.elf` attached, built by CI and checked on hardware before publishing. Flash it with STM32CubeProgrammer.
 
 Serial settings: **115200 8N1**, line ending **LF**.
 

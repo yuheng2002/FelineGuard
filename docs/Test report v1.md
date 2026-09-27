@@ -1,6 +1,6 @@
 ## FelineGuard v1 — Release Build Test Report
 
-Results of running [Test Plan.md](Test%20Plan.md) against the superloop firmware.
+Results of running [Test plan.md](Test%20plan.md) against the superloop firmware.
 
 | | |
 |---|---|
@@ -93,4 +93,4 @@ Results of running [Test Plan.md](Test%20Plan.md) against the superloop firmware
 
 ### Not covered
 
-See [Test Plan](Test%20Plan.md#not-covered).
+See [Test Plan](Test%20plan.md#not-covered).
