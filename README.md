@@ -215,6 +215,6 @@ Makefile         builds without CubeIDE
 | Document | What it is |
 |---|---|
 | [Protocol.md](docs/Protocol.md) | The specification: commands, framing, arbitration rules, hardware constraints |
-| [Decision Log.md](docs/Decision%20Log.md) | Every design decision with the alternative that was rejected and why |
+| [Decision Log.md](docs/Decision%20Log.md) | Design decisions for v1 and the alternatives rejected; not updated for this port — see the Journal for v2 |
 | [Journal.md](docs/Journal.md) | Development log — what was built each day, what broke, and what the fix taught |
 | [Test plan.md](<docs/Test plan.md>) | The Release build test procedure, shared by both branches |
